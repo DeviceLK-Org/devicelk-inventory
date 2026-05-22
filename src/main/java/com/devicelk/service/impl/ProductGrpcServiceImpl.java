@@ -22,6 +22,8 @@ public class ProductGrpcServiceImpl extends ProductGrpcServiceGrpc.ProductGrpcSe
 
     private final ProductRepository productRepository;
 
+
+
     @Override
     public void getProductStockAndPrice(InventoryRequest request, StreamObserver<InventoryResponse> responseObserver) {
         long productId = request.getProductId();
