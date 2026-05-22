@@ -1,6 +1,6 @@
-package com.devicelk.productservice.repository;
+package com.devicelk.repository;
 
-import com.devicelk.productservice.domain.Product;
+import com.devicelk.domain.Product;
 import org.springframework.data.jpa.repository.JpaRepository;
 import org.springframework.stereotype.Repository;
 
