@@ -4,6 +4,8 @@ import com.devicelk.domain.Product;
 import org.springframework.data.jpa.repository.JpaRepository;
 import org.springframework.stereotype.Repository;
 
+import java.util.List;
+
 /**
  * <b>Repository</b> layer for {@link Product}.
  * <p>
@@ -16,4 +18,14 @@ import org.springframework.stereotype.Repository;
 public interface ProductRepository extends JpaRepository<Product, Long> {
     // Checks if a product with the exact same name and brand already exists
     boolean existsByNameAndBrand(String name, String brand);
+
+    /**
+     * Bulk fetch: returns every product whose id appears in the given list.
+     * Backs the AI RAG service so it can resolve many products in one query
+     * instead of issuing a {@code findById} per id.
+     *
+     * @param ids the product identifiers to look up
+     * @return the matching products (empty list if none match)
+     */
+    List<Product> findByIdIn(List<Long> ids);
 }
