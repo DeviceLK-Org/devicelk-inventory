@@ -1,6 +1,7 @@
-package com.devicelk.productservice.dto;
+package com.devicelk.dto;
 
-import com.devicelk.productservice.domain.Category;
+import com.devicelk.domain.Category;
+import com.devicelk.domain.Product;
 
 import java.math.BigDecimal;
 
@@ -10,7 +11,7 @@ import java.math.BigDecimal;
  * Implemented as a Java {@code record}: it is immutable, generates the
  * constructor, accessors, {@code equals}/{@code hashCode}/{@code toString}
  * automatically, and decouples the public API contract from the internal
- * {@link com.devicelk.productservice.domain.Product} JPA entity. Exposing a
+ * {@link Product} JPA entity. Exposing a
  * DTO instead of the entity prevents accidental leakage of persistence
  * details and lazy-loading issues.
  */
