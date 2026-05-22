@@ -1,4 +1,4 @@
-package com.devicelk.productservice.domain;
+package com.devicelk.domain;
 
 import jakarta.persistence.Column;
 import jakarta.persistence.Entity;
