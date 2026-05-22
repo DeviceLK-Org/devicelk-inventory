@@ -1,8 +1,8 @@
 package com.devicelk.controller;
 
-import com.devicelk.productservice.domain.Product;
-import com.devicelk.productservice.dto.ProductResponseDTO;
-import com.devicelk.productservice.service.ProductService;
+import com.devicelk.domain.Product;
+import com.devicelk.dto.ProductResponseDTO;
+import com.devicelk.service.ProductService;
 import jakarta.validation.Valid;
 import org.springframework.http.HttpStatus;
 import org.springframework.http.ResponseEntity;
