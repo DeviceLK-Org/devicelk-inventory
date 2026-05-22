@@ -14,4 +14,6 @@ import org.springframework.stereotype.Repository;
  */
 @Repository
 public interface ProductRepository extends JpaRepository<Product, Long> {
+    // Checks if a product with the exact same name and brand already exists
+    boolean existsByNameAndBrand(String name, String brand);
 }
