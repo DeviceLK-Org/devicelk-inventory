@@ -8,7 +8,7 @@ spring:
 
   datasource:
     # Host 'localhost' + host port '5432' map to the PostgreSQL container in docker-compose.yml
-    url: ${DB_URL:jdbc:postgresql://localhost:5432/devicelk_inventory}
+    url: ${DB_URL:jdbc:postgresql://localhost:5433/devicelk_inventory}
     username: ${DB_USERNAME:devicelk_admin}
     password: ${DB_PASSWORD:devicelk_pass}
     driver-class-name: org.postgresql.Driver

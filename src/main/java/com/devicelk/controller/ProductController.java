@@ -1,4 +1,4 @@
-package com.devicelk.productservice.controller;
+package com.devicelk.controller;
 
 import com.devicelk.productservice.domain.Product;
 import com.devicelk.productservice.dto.ProductResponseDTO;
