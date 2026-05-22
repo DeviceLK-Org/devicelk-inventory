@@ -1,4 +1,4 @@
-package com.devicelk.productservice.exception;
+package com.devicelk.exception;
 
 /**
  * Thrown by the service layer when a requested {@code Product} does not exist.
