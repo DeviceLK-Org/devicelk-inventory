@@ -5,6 +5,8 @@ import com.devicelk.dto.ProductResponseDTO;
 import com.devicelk.exception.ProductNotFoundException;
 import com.devicelk.repository.ProductRepository;
 import com.devicelk.service.ProductService;
+import org.slf4j.Logger;
+import org.slf4j.LoggerFactory;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
 
@@ -20,6 +22,8 @@ import java.util.List;
  */
 @Service
 public class ProductServiceImpl implements ProductService {
+
+    private static final Logger log = LoggerFactory.getLogger(ProductServiceImpl.class);
 
     private final ProductRepository productRepository;
 
@@ -84,6 +88,7 @@ public class ProductServiceImpl implements ProductService {
         existing.setCategory(productDetails.getCategory());
         existing.setPrice(productDetails.getPrice());
         existing.setStockQuantity(productDetails.getStockQuantity());
+        existing.setMinStockThreshold(productDetails.getMinStockThreshold());
         existing.setDescription(productDetails.getDescription());
 
         Product updated = productRepository.save(existing);
@@ -112,6 +117,19 @@ public class ProductServiceImpl implements ProductService {
 
         product.setStockQuantity(newStock);
         Product updated = productRepository.save(product);
+
+        // Low-stock alert: non-blocking warning when stock hits or falls below
+        // the configured re-order threshold. Placeholder for a future Kafka
+        // notification topic — the transaction is intentionally NOT aborted.
+        if (newStock <= updated.getMinStockThreshold()) {
+            log.warn("[LOW STOCK ALERT] Product ID: {}, Name: {} is running low! "
+                            + "Current Stock: {}, Threshold: {}",
+                    updated.getId(),
+                    updated.getName(),
+                    updated.getStockQuantity(),
+                    updated.getMinStockThreshold());
+        }
+
         return mapToDTO(updated);
     }
 
@@ -132,6 +150,7 @@ public class ProductServiceImpl implements ProductService {
                 p.getCategory(),
                 p.getPrice(),
                 p.getStockQuantity(),
+                p.getMinStockThreshold(),
                 p.getDescription()
         );
     }
