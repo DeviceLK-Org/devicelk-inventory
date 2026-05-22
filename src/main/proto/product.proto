@@ -1,0 +1,25 @@
+syntax = "proto3";
+
+package com.devicelk;
+
+option java_multiple_files = true;
+option java_package = "com.devicelk.grpc";
+option java_outer_classname = "ProductProto";
+
+// gRPC service that will be called by the AI Retrieval service
+service ProductGrpcService {
+  rpc GetProductStockAndPrice (InventoryRequest) returns (InventoryResponse);
+}
+
+// Request from AI service
+message InventoryRequest {
+  int64 product_id = 1;
+}
+
+// Response to AI service (Optimized for financial accuracy)
+message InventoryResponse {
+  int64 product_id = 1;
+  string price = 2; // Kept as string to preserve exact BigDecimal precision without floating-point issues
+  int32 stock_quantity = 3;
+  bool is_available = 4;
+}
