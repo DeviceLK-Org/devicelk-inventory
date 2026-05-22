@@ -1,4 +1,4 @@
-package com.devicelk.productservice.domain;
+package com.devicelk.domain;
 
 /**
  * Enumerates the product categories supported by the DeviceLK inventory.
