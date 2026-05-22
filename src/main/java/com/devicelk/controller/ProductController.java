@@ -6,11 +6,15 @@ import com.devicelk.service.ProductService;
 import jakarta.validation.Valid;
 import org.springframework.http.HttpStatus;
 import org.springframework.http.ResponseEntity;
+import org.springframework.web.bind.annotation.DeleteMapping;
 import org.springframework.web.bind.annotation.GetMapping;
+import org.springframework.web.bind.annotation.PatchMapping;
 import org.springframework.web.bind.annotation.PathVariable;
 import org.springframework.web.bind.annotation.PostMapping;
+import org.springframework.web.bind.annotation.PutMapping;
 import org.springframework.web.bind.annotation.RequestBody;
 import org.springframework.web.bind.annotation.RequestMapping;
+import org.springframework.web.bind.annotation.RequestParam;
 import org.springframework.web.bind.annotation.RestController;
 
 import java.util.List;
@@ -63,5 +67,54 @@ public class ProductController {
     @GetMapping("/{id}")
     public ResponseEntity<ProductResponseDTO> getProductById(@PathVariable Long id) {
         return ResponseEntity.ok(productService.getProductById(id));
+    }
+
+    /**
+     * Bulk fetches products for a list of ids — backs the AI RAG service.
+     *
+     * @param ids the product identifiers, e.g. {@code /inventory/bulk?ids=1,2,3}
+     * @return HTTP 200 OK with the (possibly empty) list of matching products
+     */
+    @GetMapping("/bulk")
+    public ResponseEntity<List<ProductResponseDTO>> getProductsByIds(@RequestParam List<Long> ids) {
+        return ResponseEntity.ok(productService.getProductsByIds(ids));
+    }
+
+    /**
+     * Replaces the fields of an existing product.
+     *
+     * @param id      the product identifier
+     * @param product request body, validated by Bean Validation annotations
+     * @return HTTP 200 OK with the updated product
+     */
+    @PutMapping("/{id}")
+    public ResponseEntity<ProductResponseDTO> updateProduct(@PathVariable Long id,
+                                                            @Valid @RequestBody Product product) {
+        return ResponseEntity.ok(productService.updateProduct(id, product));
+    }
+
+    /**
+     * Adjusts a product's stock level by a relative amount.
+     *
+     * @param id             the product identifier
+     * @param quantityChange the signed change to apply (positive adds, negative removes)
+     * @return HTTP 200 OK with the updated product
+     */
+    @PatchMapping("/{id}/stock")
+    public ResponseEntity<ProductResponseDTO> adjustStock(@PathVariable Long id,
+                                                          @RequestParam Integer quantityChange) {
+        return ResponseEntity.ok(productService.adjustStock(id, quantityChange));
+    }
+
+    /**
+     * Removes a product from the inventory.
+     *
+     * @param id the product identifier
+     * @return HTTP 204 No Content
+     */
+    @DeleteMapping("/{id}")
+    public ResponseEntity<Void> deleteProduct(@PathVariable Long id) {
+        productService.deleteProduct(id);
+        return ResponseEntity.noContent().build();
     }
 }
