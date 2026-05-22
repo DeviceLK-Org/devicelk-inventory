@@ -44,4 +44,8 @@ public class GlobalExceptionHandler {
         body.put("fields", fieldErrors);
         return new ResponseEntity<>(body, HttpStatus.BAD_REQUEST);
     }
+    @ExceptionHandler(IllegalArgumentException.class)
+    public ResponseEntity<String> handleIllegalArgumentException(IllegalArgumentException ex) {
+        return new ResponseEntity<>(ex.getMessage(), HttpStatus.CONFLICT); // Returns HTTP 409 Conflict
+    }
 }
