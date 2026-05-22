@@ -22,6 +22,7 @@ public record ProductResponseDTO(
         Category category,
         BigDecimal price,
         Integer stockQuantity,
+        Integer minStockThreshold,
         String description
 ) {
 }
