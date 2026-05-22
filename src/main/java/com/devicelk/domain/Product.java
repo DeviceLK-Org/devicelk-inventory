@@ -60,6 +60,16 @@ public class Product {
     @Column(nullable = false)
     private Integer stockQuantity;
 
+    /**
+     * Re-order trigger level. When {@code stockQuantity} drops to or below this
+     * value, the service layer raises a low-stock alert (see
+     * {@code ProductServiceImpl#adjustStock}).
+     */
+    @NotNull(message = "Minimum stock threshold is required")
+    @Min(value = 0, message = "Minimum stock threshold cannot be negative")
+    @Column(nullable = false)
+    private Integer minStockThreshold;
+
     @Size(max = 1000, message = "Description cannot exceed 1000 characters")
     @Column(length = 1000)
     private String description;
@@ -74,12 +84,14 @@ public class Product {
                    Category category,
                    BigDecimal price,
                    Integer stockQuantity,
+                   Integer minStockThreshold,
                    String description) {
         this.name = name;
         this.brand = brand;
         this.category = category;
         this.price = price;
         this.stockQuantity = stockQuantity;
+        this.minStockThreshold = minStockThreshold;
         this.description = description;
     }
 
@@ -129,6 +141,14 @@ public class Product {
 
     public void setStockQuantity(Integer stockQuantity) {
         this.stockQuantity = stockQuantity;
+    }
+
+    public Integer getMinStockThreshold() {
+        return minStockThreshold;
+    }
+
+    public void setMinStockThreshold(Integer minStockThreshold) {
+        this.minStockThreshold = minStockThreshold;
     }
 
     public String getDescription() {
