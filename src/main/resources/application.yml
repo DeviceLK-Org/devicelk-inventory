@@ -1,6 +1,11 @@
 server:
   port: 8081 # Running port of the inventory (product) service
 
+grpc:
+  server:
+    port: 9090
+    reflection-service-enabled: true
+
 spring:
   application:
     # Registered in Eureka as PRODUCT-SERVICE — matches the API Gateway route (lb://PRODUCT-SERVICE)
