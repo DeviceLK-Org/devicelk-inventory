@@ -2,6 +2,7 @@ package com.devicelk.repository;
 
 import com.devicelk.domain.Product;
 import org.springframework.data.jpa.repository.JpaRepository;
+import org.springframework.data.jpa.repository.JpaSpecificationExecutor;
 import org.springframework.stereotype.Repository;
 
 import java.util.List;
@@ -13,9 +14,15 @@ import java.util.List;
  * ({@code save}, {@code findById}, {@code findAll}, {@code deleteById}, ...)
  * without any boilerplate implementation. Spring Data generates the proxy
  * at runtime.
+ * <p>
+ * Extending {@link JpaSpecificationExecutor} additionally enables dynamic,
+ * criteria-based queries — required by the advanced search/filtering feature
+ * which builds a {@code Specification<Product>} at runtime and runs it through
+ * {@code findAll(spec, pageable)}.
  */
 @Repository
-public interface ProductRepository extends JpaRepository<Product, Long> {
+public interface ProductRepository
+        extends JpaRepository<Product, Long>, JpaSpecificationExecutor<Product> {
     // Checks if a product with the exact same name and brand already exists
     boolean existsByNameAndBrand(String name, String brand);
 
