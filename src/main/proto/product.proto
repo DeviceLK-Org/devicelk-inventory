@@ -9,6 +9,7 @@ option java_outer_classname = "ProductProto";
 // gRPC service that will be called by the AI Retrieval service
 service ProductGrpcService {
   rpc GetProductStockAndPrice (InventoryRequest) returns (InventoryResponse);
+  rpc GetBulkProductStockAndPrice (BulkInventoryRequest) returns (BulkInventoryResponse);
 }
 
 // Request from AI service
@@ -22,4 +23,14 @@ message InventoryResponse {
   string price = 2; // Kept as string to preserve exact BigDecimal precision without floating-point issues
   int32 stock_quantity = 3;
   bool is_available = 4;
+  string name = 5;
+  string description = 6; // Empty string when the product has no description
+}
+
+message BulkInventoryRequest {
+  repeated int64 product_ids = 1; // arraylist
+}
+
+message BulkInventoryResponse {
+  repeated InventoryResponse responses = 1;
 }
