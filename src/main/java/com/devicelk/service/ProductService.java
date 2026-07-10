@@ -3,7 +3,10 @@ package com.devicelk.service;
 import com.devicelk.domain.Product;
 import com.devicelk.dto.ProductResponseDTO;
 import com.devicelk.exception.ProductNotFoundException;
+import org.springframework.data.domain.Page;
+import org.springframework.data.domain.Pageable;
 
+import java.math.BigDecimal;
 import java.util.List;
 
 /**
@@ -82,4 +85,30 @@ public interface ProductService {
      * @return the matching products as response DTOs (empty list if none match)
      */
     List<ProductResponseDTO> getProductsByIds(List<Long> ids);
+
+    /**
+     * Performs a paginated, filtered search over the inventory.
+     * <p>
+     * Every filter is optional: a {@code null} or blank argument simply omits
+     * that predicate, so callers can mix and match criteria freely. The
+     * implementation builds the query dynamically with Spring Data JPA
+     * {@code Specification}s.
+     *
+     * @param name     partial, case-insensitive match on the product name
+     *                 ({@code like %name%}); ignored when null/blank
+     * @param brand    case-insensitive exact match on the brand;
+     *                 ignored when null/blank
+     * @param category exact match against the {@link com.devicelk.domain.Category}
+     *                 enum name; ignored when null/blank
+     * @param minPrice inclusive lower price bound; ignored when null
+     * @param maxPrice inclusive upper price bound; ignored when null
+     * @param pageable paging and sorting directives
+     * @return a page of matching products as response DTOs
+     */
+    Page<ProductResponseDTO> searchProducts(String name,
+                                            String brand,
+                                            String category,
+                                            BigDecimal minPrice,
+                                            BigDecimal maxPrice,
+                                            Pageable pageable);
 }
