@@ -9,7 +9,7 @@ grpc:
 spring:
   application:
     # Registered in Eureka as PRODUCT-SERVICE — matches the API Gateway route (lb://PRODUCT-SERVICE)
-    name: product-service
+    name: devicelk-inventory-service
 
   datasource:
     # Host 'localhost' + host port '5432' map to the PostgreSQL container in docker-compose.yml
@@ -30,11 +30,17 @@ spring:
 
 eureka:
   client:
-    # Register this service with the DeviceLK Service Discovery (Eureka) server
     service-url:
       defaultZone: ${EUREKA_URL:http://localhost:8761/eureka/}
+    register-with-eureka: true
+    fetch-registry: true
   instance:
     prefer-ip-address: true
+    instance-id: ${spring.application.name}:${server.port}
+    health-check-url-path: /actuator/health
+    status-page-url-path: /actuator/info
+    lease-renewal-interval-in-seconds: 10
+    lease-expiration-duration-in-seconds: 30
 
 management:
   endpoints:
@@ -43,4 +49,4 @@ management:
         include: health,info,prometheus
   endpoint:
     health:
-      show-details: when-authorized
+      show-details: always
