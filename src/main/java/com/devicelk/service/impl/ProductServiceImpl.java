@@ -1,5 +1,6 @@
 package com.devicelk.service.impl;
 
+import com.devicelk.domain.Category;
 import com.devicelk.domain.Product;
 import com.devicelk.dto.ProductResponseDTO;
 import com.devicelk.exception.ProductNotFoundException;
@@ -7,9 +8,13 @@ import com.devicelk.repository.ProductRepository;
 import com.devicelk.service.ProductService;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
+import org.springframework.data.domain.Page;
+import org.springframework.data.domain.Pageable;
+import org.springframework.data.jpa.domain.Specification;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
 
+import java.math.BigDecimal;
 import java.util.List;
 
 /**
@@ -139,6 +144,51 @@ public class ProductServiceImpl implements ProductService {
         return productRepository.findByIdIn(ids).stream()
                 .map(this::mapToDTO)
                 .toList();
+    }
+
+    @Override
+    @Transactional(readOnly = true)
+    public Page<ProductResponseDTO> searchProducts(String name,
+                                                   String brand,
+                                                   String category,
+                                                   BigDecimal minPrice,
+                                                   BigDecimal maxPrice,
+                                                   Pageable pageable) {
+        // Build the query dynamically: start from an always-true predicate and
+        // AND in a restriction only when its parameter was actually supplied.
+        Specification<Product> spec = (root, query, cb) -> cb.conjunction();
+
+        if (name != null && !name.isBlank()) {
+            String pattern = "%" + name.trim().toLowerCase() + "%";
+            spec = spec.and((root, query, cb) ->
+                    cb.like(cb.lower(root.get("name")), pattern));
+        }
+
+        if (brand != null && !brand.isBlank()) {
+            String brandValue = brand.trim().toLowerCase();
+            spec = spec.and((root, query, cb) ->
+                    cb.equal(cb.lower(root.get("brand")), brandValue));
+        }
+
+        if (category != null && !category.isBlank()) {
+            // Resolve the enum up front; an invalid value surfaces as an
+            // IllegalArgumentException, which the GlobalExceptionHandler maps.
+            Category categoryEnum = Category.valueOf(category.trim().toUpperCase());
+            spec = spec.and((root, query, cb) ->
+                    cb.equal(root.get("category"), categoryEnum));
+        }
+
+        if (minPrice != null) {
+            spec = spec.and((root, query, cb) ->
+                    cb.greaterThanOrEqualTo(root.get("price"), minPrice));
+        }
+
+        if (maxPrice != null) {
+            spec = spec.and((root, query, cb) ->
+                    cb.lessThanOrEqualTo(root.get("price"), maxPrice));
+        }
+
+        return productRepository.findAll(spec, pageable).map(this::mapToDTO);
     }
 
     /** Maps a persisted entity to the immutable response DTO. */
