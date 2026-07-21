@@ -31,6 +31,22 @@ spring:
         format_sql: true
         dialect: org.hibernate.dialect.PostgreSQLDialect
 
+  security:
+    oauth2:
+      resourceserver:
+        jwt:
+          # Same Keycloak realm the API gateway already validates against, so a
+          # token minted for the gateway is accepted here unchanged.
+          #
+          # Both properties are set on purpose. With jwk-set-uri present, Spring
+          # builds the decoder lazily and fetches the keys on first use, so this
+          # application still starts when Keycloak is down — setting issuer-uri
+          # alone would make it fetch realm metadata during startup and fail.
+          # issuer-uri is still honoured: it adds validation of the token's 'iss'
+          # claim, so a correctly-signed token from another realm is rejected.
+          issuer-uri: ${KEYCLOAK_ISSUER_URI:http://localhost:8180/realms/devicelk}
+          jwk-set-uri: ${KEYCLOAK_JWK_SET_URI:http://localhost:8180/realms/devicelk/protocol/openid-connect/certs}
+
   modulith:
     # Modulith 1.1.x: re-publish incomplete event publications from the JPA registry
     # on restart (default false; 'spring.modulith.events.completion-mode' only exists

@@ -49,6 +49,15 @@
             <artifactId>spring-boot-starter-data-jpa</artifactId>
         </dependency>
 
+        <!-- Resource server: validates Keycloak-issued JWTs on the cart endpoints.
+             Adding Spring Security to the classpath secures every request by default,
+             so SecurityConfig deliberately re-opens everything outside /api/v1/cart/**
+             to keep the inventory REST API and gRPC service behaving as they did. -->
+        <dependency>
+            <groupId>org.springframework.boot</groupId>
+            <artifactId>spring-boot-starter-oauth2-resource-server</artifactId>
+        </dependency>
+
         <dependency>
             <groupId>org.postgresql</groupId>
             <artifactId>postgresql</artifactId>
