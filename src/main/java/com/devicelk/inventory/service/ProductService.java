@@ -1,8 +1,9 @@
 package com.devicelk.inventory.service;
 
 import com.devicelk.inventory.api.ProductResponseDTO;
-import com.devicelk.inventory.domain.Product;
+import com.devicelk.inventory.api.ProductWriteRequest;
 import com.devicelk.inventory.exception.ProductNotFoundException;
+import com.devicelk.inventory.exception.StockNotFoundException;
 import com.devicelk.inventory.domain.Category;
 import org.springframework.data.domain.Page;
 import org.springframework.data.domain.Pageable;
@@ -19,12 +20,14 @@ import java.util.List;
 public interface ProductService {
 
     /**
-     * Persists a new product.
+     * Persists a new product together with its stock row, in one transaction.
      *
-     * @param product the validated product to store
+     * @param request the validated product to store
      * @return the saved product as a response DTO (including its generated id)
+     * @throws IllegalArgumentException
+     *         if the name/brand pair already exists
      */
-    ProductResponseDTO createProduct(Product product);
+    ProductResponseDTO createProduct(ProductWriteRequest request);
 
     /**
      * Retrieves every product in the inventory.
@@ -44,17 +47,19 @@ public interface ProductService {
     ProductResponseDTO getProductById(Long id);
 
     /**
-     * Updates an existing product with new field values.
+     * Updates an existing product, and its stock row, with new field values.
      *
-     * @param id             the id of the product to update
-     * @param productDetails the new field values
+     * @param id      the id of the product to update
+     * @param request the new field values
      * @return the updated product as a response DTO
      * @throws ProductNotFoundException
      *         if no product exists for the given id
+     * @throws StockNotFoundException
+     *         if the product exists but has no stock row
      * @throws IllegalArgumentException
      *         if the new name/brand collides with a different product
      */
-    ProductResponseDTO updateProduct(Long id, Product productDetails);
+    ProductResponseDTO updateProduct(Long id, ProductWriteRequest request);
 
     /**
      * Removes a product from the inventory.
@@ -74,6 +79,8 @@ public interface ProductService {
      * @return the updated product as a response DTO
      * @throws ProductNotFoundException
      *         if no product exists for the given id
+     * @throws StockNotFoundException
+     *         if the product exists but has no stock row
      * @throws IllegalArgumentException
      *         if the adjustment would drive stock below zero
      */

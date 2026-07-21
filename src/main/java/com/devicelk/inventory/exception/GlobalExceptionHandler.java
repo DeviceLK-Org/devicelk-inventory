@@ -2,6 +2,7 @@ package com.devicelk.inventory.exception;
 
 import org.springframework.http.HttpStatus;
 import org.springframework.http.ResponseEntity;
+import org.springframework.orm.ObjectOptimisticLockingFailureException;
 import org.springframework.web.bind.MethodArgumentNotValidException;
 import org.springframework.web.bind.annotation.ExceptionHandler;
 import org.springframework.web.bind.annotation.RestControllerAdvice;
@@ -28,6 +29,35 @@ public class GlobalExceptionHandler {
         body.put("error", "Not Found");
         body.put("message", ex.getMessage());
         return new ResponseEntity<>(body, HttpStatus.NOT_FOUND);
+    }
+
+    /**
+     * Maps a product whose stock row is absent to HTTP 404 Not Found.
+     * <p>
+     * Same status as {@link ProductNotFoundException} — the requested resource
+     * genuinely is not there, and holding the status steady keeps the existing
+     * client contract — but with a message that names the real problem.
+     */
+    @ExceptionHandler(StockNotFoundException.class)
+    public ResponseEntity<Map<String, Object>> handleStockNotFound(StockNotFoundException ex) {
+        Map<String, Object> body = new LinkedHashMap<>();
+        body.put("timestamp", LocalDateTime.now());
+        body.put("status", HttpStatus.NOT_FOUND.value());
+        body.put("error", "Not Found");
+        body.put("message", ex.getMessage());
+        return new ResponseEntity<>(body, HttpStatus.NOT_FOUND);
+    }
+
+    /**
+     * Maps a lost optimistic-lock race on {@code Stock} to HTTP 409 Conflict.
+     * <p>
+     * Two concurrent adjustments to the same product make the second one fail
+     * its version check. That is a retryable conflict, not a server fault, so it
+     * must not surface as a 500 — the caller can simply re-read and re-apply.
+     */
+    @ExceptionHandler(ObjectOptimisticLockingFailureException.class)
+    public ResponseEntity<String> handleConcurrentModification(ObjectOptimisticLockingFailureException ex) {
+        return new ResponseEntity<>("Stock was modified concurrently, please retry.", HttpStatus.CONFLICT);
     }
 
     /** Maps Bean Validation failures (@Valid) to HTTP 400 Bad Request. */

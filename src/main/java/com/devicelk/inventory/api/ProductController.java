@@ -1,6 +1,5 @@
 package com.devicelk.inventory.api;
 
-import com.devicelk.inventory.domain.Product;
 import com.devicelk.inventory.service.ProductService;
 import jakarta.validation.Valid;
 import org.springframework.data.domain.Page;
@@ -41,14 +40,14 @@ public class ProductController {
     }
 
     /**
-     * Adds a new product to the inventory.
+     * Adds a new product to the inventory, along with its stock row.
      *
-     * @param product request body, validated by Bean Validation annotations
+     * @param request request body, validated by Bean Validation annotations
      * @return HTTP 201 Created with the persisted product
      */
     @PostMapping
-    public ResponseEntity<ProductResponseDTO> addProduct(@Valid @RequestBody Product product) {
-        ProductResponseDTO created = productService.createProduct(product);
+    public ResponseEntity<ProductResponseDTO> addProduct(@Valid @RequestBody ProductWriteRequest request) {
+        ProductResponseDTO created = productService.createProduct(request);
         return new ResponseEntity<>(created, HttpStatus.CREATED);
     }
 
@@ -116,16 +115,16 @@ public class ProductController {
     }
 
     /**
-     * Replaces the fields of an existing product.
+     * Replaces the fields of an existing product, and its stock levels.
      *
      * @param id      the product identifier
-     * @param product request body, validated by Bean Validation annotations
+     * @param request request body, validated by Bean Validation annotations
      * @return HTTP 200 OK with the updated product
      */
     @PutMapping("/{id}")
     public ResponseEntity<ProductResponseDTO> updateProduct(@PathVariable Long id,
-                                                            @Valid @RequestBody Product product) {
-        return ResponseEntity.ok(productService.updateProduct(id, product));
+                                                            @Valid @RequestBody ProductWriteRequest request) {
+        return ResponseEntity.ok(productService.updateProduct(id, request));
     }
 
     /**

@@ -1,7 +1,10 @@
 package com.devicelk.inventory.api;
 
 import com.devicelk.inventory.domain.Category;
+import com.devicelk.inventory.domain.Money;
 import com.devicelk.inventory.domain.Product;
+import com.devicelk.inventory.domain.Stock;
+import com.devicelk.inventory.repository.StockRepository;
 import com.devicelk.grpc.BulkInventoryRequest;
 import com.devicelk.grpc.BulkInventoryResponse;
 import com.devicelk.grpc.InventoryRequest;
@@ -21,7 +24,10 @@ import org.springframework.data.domain.Sort;
 
 import java.math.BigDecimal;
 import java.util.List;
+import java.util.Map;
 import java.util.Optional;
+import java.util.function.Function;
+import java.util.stream.Collectors;
 
 /**
  * gRPC service implementation for dynamic inventory queries.
@@ -45,6 +51,7 @@ class ProductGrpcServiceImpl extends ProductGrpcServiceGrpc.ProductGrpcServiceIm
 
     private final ProductRepository productRepository;
 
+    private final StockRepository stockRepository;
 
 
     @Override
@@ -64,7 +71,8 @@ class ProductGrpcServiceImpl extends ProductGrpcServiceGrpc.ProductGrpcServiceIm
             }
 
             // Stream the response back to the client and close the channel
-            responseObserver.onNext(toInventoryResponse(productOptional.get()));
+            responseObserver.onNext(toInventoryResponse(
+                    productOptional.get(), stockRepository.findById(productId).orElse(null)));
             responseObserver.onCompleted();
         } catch (Throwable t) {
             // Throwable, not Exception: linkage errors from stale generated stubs
@@ -85,10 +93,12 @@ class ProductGrpcServiceImpl extends ProductGrpcServiceGrpc.ProductGrpcServiceIm
             // Single round-trip lookup: any missing ids are silently absent from
             // the result list — the AI retrieval layer handles partial matches.
             List<Product> products = productRepository.findByIdIn(productIds);
+            Map<Long, Stock> stockByProductId = stockByProductId(products);
 
             BulkInventoryResponse.Builder responseBuilder = BulkInventoryResponse.newBuilder();
             for (Product product : products) {
-                responseBuilder.addResponses(toInventoryResponse(product));
+                responseBuilder.addResponses(
+                        toInventoryResponse(product, stockByProductId.get(product.getId())));
             }
 
             responseObserver.onNext(responseBuilder.build());
@@ -108,12 +118,12 @@ class ProductGrpcServiceImpl extends ProductGrpcServiceGrpc.ProductGrpcServiceIm
         // Validate before touching the database: a malformed request must map to
         // INVALID_ARGUMENT, never INTERNAL.
         Category category;
-        BigDecimal minPrice;
-        BigDecimal maxPrice;
+        Long minPriceCents;
+        Long maxPriceCents;
         try {
             category = parseCategory(request.getCategory());
-            minPrice = parsePrice(request.getMinPrice(), "min_price");
-            maxPrice = parsePrice(request.getMaxPrice(), "max_price");
+            minPriceCents = parsePriceCents(request.getMinPrice(), "min_price");
+            maxPriceCents = parsePriceCents(request.getMaxPrice(), "max_price");
         } catch (IllegalArgumentException e) {
             responseObserver.onError(Status.INVALID_ARGUMENT
                     .withDescription(e.getMessage())
@@ -130,13 +140,16 @@ class ProductGrpcServiceImpl extends ProductGrpcServiceGrpc.ProductGrpcServiceIm
             // deterministic across calls.
             List<Product> products = productRepository.findAll(
                     ProductRepository.searchSpecification(
-                            category, minPrice, maxPrice, request.getInStockOnly()),
-                    PageRequest.of(0, limit, Sort.by("price").ascending().and(Sort.by("id").ascending()))
+                            category, minPriceCents, maxPriceCents, request.getInStockOnly()),
+                    PageRequest.of(0, limit,
+                            Sort.by("priceCents").ascending().and(Sort.by("id").ascending()))
             ).getContent();
+            Map<Long, Stock> stockByProductId = stockByProductId(products);
 
             ProductSearchResponse.Builder responseBuilder = ProductSearchResponse.newBuilder();
             for (Product product : products) {
-                responseBuilder.addProducts(toInventoryResponse(product));
+                responseBuilder.addProducts(
+                        toInventoryResponse(product, stockByProductId.get(product.getId())));
             }
 
             responseObserver.onNext(responseBuilder.build());
@@ -171,29 +184,64 @@ class ProductGrpcServiceImpl extends ProductGrpcServiceGrpc.ProductGrpcServiceIm
     }
 
     /**
-     * Parses an optional price bound; empty means "no bound" (returns {@code null}).
+     * Parses an optional price bound into minor units; empty means "no bound"
+     * (returns {@code null}).
+     * <p>
+     * Converting here rather than at the query keeps every failure mode inside
+     * the caller's INVALID_ARGUMENT handler, so a malformed bound can never
+     * escape as INTERNAL.
      *
-     * @throws IllegalArgumentException when the value is not a valid decimal number
+     * @throws IllegalArgumentException when the value is not a valid decimal
+     *         number, or carries a fraction of a cent
      */
-    private static BigDecimal parsePrice(String price, String fieldName) {
+    private static Long parsePriceCents(String price, String fieldName) {
         if (price == null || price.isBlank()) {
             return null;
         }
+        BigDecimal parsed;
         try {
-            return new BigDecimal(price.trim());
+            parsed = new BigDecimal(price.trim());
         } catch (NumberFormatException e) {
             throw new IllegalArgumentException(
                     "Invalid " + fieldName + " '" + price + "': not a valid decimal number.");
         }
+        try {
+            return Money.toCents(parsed);
+        } catch (ArithmeticException e) {
+            throw new IllegalArgumentException(
+                    "Invalid " + fieldName + " '" + price + "': more than 2 decimal places.");
+        }
     }
 
-    /** Builds the production-ready Protobuf binary response for a single product. */
-    private InventoryResponse toInventoryResponse(Product product) {
+    /** Indexes the stock rows for the given products by product id, in one query. */
+    private Map<Long, Stock> stockByProductId(List<Product> products) {
+        if (products.isEmpty()) {
+            return Map.of();
+        }
+        List<Long> ids = products.stream().map(Product::getId).toList();
+        return stockRepository.findByProductIdIn(ids).stream()
+                .collect(Collectors.toMap(Stock::getProductId, Function.identity()));
+    }
+
+    /**
+     * Builds the production-ready Protobuf binary response for a single product.
+     *
+     * @param stock the product's stock row, or {@code null} if it has none —
+     *              reported as zero stock and unavailable, which is the safe
+     *              answer for a caller deciding whether it can sell the item
+     */
+    private InventoryResponse toInventoryResponse(Product product, Stock stock) {
+        int availableQty = stock == null ? 0 : stock.getAvailableQty();
+        if (stock == null) {
+            log.warn("Stock record missing for product ID: {}; reporting zero stock", product.getId());
+        }
         return InventoryResponse.newBuilder()
                 .setProductId(product.getId())
-                .setPrice(product.getPrice().toPlainString()) // toPlainString() avoids scientific notation
-                .setStockQuantity(product.getStockQuantity())
-                .setIsAvailable(product.getStockQuantity() > 0)
+                // Money.toDisplayString is the single cents -> decimal string
+                // conversion; it never emits scientific notation.
+                .setPrice(Money.toDisplayString(product.getPriceCents()))
+                .setStockQuantity(availableQty)
+                .setIsAvailable(availableQty > 0)
                 .setName(product.getName())
                 // Protobuf setters reject null — the description column is nullable
                 .setDescription(product.getDescription() == null ? "" : product.getDescription())
