@@ -12,21 +12,32 @@ spring:
     name: devicelk-inventory-service
 
   datasource:
-    # Host 'localhost' + host port '5432' map to the PostgreSQL container in docker-compose.yml
-    url: ${DB_URL:jdbc:postgresql://localhost:5433/devicelk_inventory}
+    # Host port 5433 maps to the devicelk-commerce-db container (docker-compose.yml).
+    # One database for the whole commerce monolith; each module owns its own schema
+    # (inventory / cart / orders — created by init/01-schemas.sql).
+    url: ${DB_URL:jdbc:postgresql://localhost:5433/devicelk_commerce}
     username: ${DB_USERNAME:devicelk_admin}
     password: ${DB_PASSWORD:devicelk_pass}
     driver-class-name: org.postgresql.Driver
 
   jpa:
     hibernate:
-      # 'update' lets Hibernate create/evolve the schema automatically during development
+      # Dev only: Hibernate creates/evolves tables in each module's schema automatically.
+      # Moves to 'validate' + Flyway migrations when the modules are split into services.
       ddl-auto: update
     show-sql: true
     properties:
       hibernate:
         format_sql: true
         dialect: org.hibernate.dialect.PostgreSQLDialect
+
+  modulith:
+    # Modulith 1.1.x: re-publish incomplete event publications from the JPA registry
+    # on restart (default false; 'spring.modulith.events.completion-mode' only exists
+    # from Modulith 1.3). The registry's event_publication table is a plain JPA entity
+    # with the starter-jpa, so ddl-auto creates it — the JDBC-starter-only property
+    # 'spring.modulith.events.jdbc.schema-initialization.enabled' is not needed here.
+    republish-outstanding-events-on-restart: true
 
 eureka:
   client:
