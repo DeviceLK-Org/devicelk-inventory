@@ -1,8 +1,7 @@
-package com.devicelk.controller;
+package com.devicelk.inventory.api;
 
-import com.devicelk.domain.Product;
-import com.devicelk.dto.ProductResponseDTO;
-import com.devicelk.service.ProductService;
+import com.devicelk.inventory.domain.Product;
+import com.devicelk.inventory.service.ProductService;
 import jakarta.validation.Valid;
 import org.springframework.data.domain.Page;
 import org.springframework.data.domain.Pageable;

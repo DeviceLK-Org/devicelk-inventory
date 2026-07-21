@@ -1,4 +1,4 @@
-package com.devicelk.exception;
+package com.devicelk.inventory.exception;
 
 import org.springframework.http.HttpStatus;
 import org.springframework.http.ResponseEntity;

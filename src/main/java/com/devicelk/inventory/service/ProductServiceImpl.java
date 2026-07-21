@@ -1,11 +1,10 @@
-package com.devicelk.service.impl;
+package com.devicelk.inventory.service;
 
-import com.devicelk.domain.Category;
-import com.devicelk.domain.Product;
-import com.devicelk.dto.ProductResponseDTO;
-import com.devicelk.exception.ProductNotFoundException;
-import com.devicelk.repository.ProductRepository;
-import com.devicelk.service.ProductService;
+import com.devicelk.inventory.api.ProductResponseDTO;
+import com.devicelk.inventory.domain.Category;
+import com.devicelk.inventory.domain.Product;
+import com.devicelk.inventory.exception.ProductNotFoundException;
+import com.devicelk.inventory.repository.ProductRepository;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 import org.springframework.data.domain.Page;
@@ -24,9 +23,13 @@ import java.util.List;
  * {@link Product} JPA entity to the {@link ProductResponseDTO} exposed by
  * the API. Constructor injection is used so the dependency is final and the
  * class stays easy to test.
+ * <p>
+ * Package-private on purpose: only the {@link ProductService} interface is
+ * visible outside this package, keeping the implementation an internal detail
+ * of the inventory module.
  */
 @Service
-public class ProductServiceImpl implements ProductService {
+class ProductServiceImpl implements ProductService {
 
     private static final Logger log = LoggerFactory.getLogger(ProductServiceImpl.class);
 

@@ -1,7 +1,7 @@
-package com.devicelk.dto;
+package com.devicelk.inventory.api;
 
-import com.devicelk.domain.Category;
-import com.devicelk.domain.Product;
+import com.devicelk.inventory.domain.Category;
+import com.devicelk.inventory.domain.Product;
 
 import java.math.BigDecimal;
 

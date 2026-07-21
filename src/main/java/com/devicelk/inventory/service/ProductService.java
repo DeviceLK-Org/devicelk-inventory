@@ -1,8 +1,9 @@
-package com.devicelk.service;
+package com.devicelk.inventory.service;
 
-import com.devicelk.domain.Product;
-import com.devicelk.dto.ProductResponseDTO;
-import com.devicelk.exception.ProductNotFoundException;
+import com.devicelk.inventory.api.ProductResponseDTO;
+import com.devicelk.inventory.domain.Product;
+import com.devicelk.inventory.exception.ProductNotFoundException;
+import com.devicelk.inventory.domain.Category;
 import org.springframework.data.domain.Page;
 import org.springframework.data.domain.Pageable;
 
@@ -98,7 +99,7 @@ public interface ProductService {
      *                 ({@code like %name%}); ignored when null/blank
      * @param brand    case-insensitive exact match on the brand;
      *                 ignored when null/blank
-     * @param category exact match against the {@link com.devicelk.domain.Category}
+     * @param category exact match against the {@link Category}
      *                 enum name; ignored when null/blank
      * @param minPrice inclusive lower price bound; ignored when null
      * @param maxPrice inclusive upper price bound; ignored when null

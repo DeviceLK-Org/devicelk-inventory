@@ -1,4 +1,4 @@
-package com.devicelk.domain;
+package com.devicelk.inventory.domain;
 
 import jakarta.persistence.*;
 import jakarta.validation.constraints.Min;
@@ -19,6 +19,7 @@ import java.math.BigDecimal;
 @Entity
 @Table(
         name = "products",
+        schema = "inventory",
         uniqueConstraints = {
                 @UniqueConstraint(
                         name = "uc_product_name_brand",

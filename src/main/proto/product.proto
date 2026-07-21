@@ -10,6 +10,7 @@ option java_outer_classname = "ProductProto";
 service ProductGrpcService {
   rpc GetProductStockAndPrice (InventoryRequest) returns (InventoryResponse);
   rpc GetBulkProductStockAndPrice (BulkInventoryRequest) returns (BulkInventoryResponse);
+  rpc SearchProducts (ProductSearchRequest) returns (ProductSearchResponse);
 }
 
 // Request from AI service
@@ -33,4 +34,19 @@ message BulkInventoryRequest {
 
 message BulkInventoryResponse {
   repeated InventoryResponse responses = 1;
+}
+
+// Deterministic SQL-side filtering for the AI service: price and stock
+// constraints extracted from a user question must never be evaluated by the
+// LLM or the vector store — they are resolved here, against the database.
+message ProductSearchRequest {
+  string category = 1;     // e.g. "LAPTOP"; empty = any category
+  string min_price = 2;    // decimal string to preserve exact BigDecimal precision; empty = no lower bound
+  string max_price = 3;    // decimal string; empty = no upper bound
+  bool in_stock_only = 4;  // when true, only products with stock_quantity > 0
+  int32 limit = 5;         // max results; 0 = server default (10), server caps at 50
+}
+
+message ProductSearchResponse {
+  repeated InventoryResponse products = 1;
 }
