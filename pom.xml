@@ -111,6 +111,33 @@
             <scope>test</scope>
         </dependency>
 
+        <!-- MockMvc support for JWT-authenticated requests (SecurityMockMvcRequestPostProcessors.jwt) -->
+        <dependency>
+            <groupId>org.springframework.security</groupId>
+            <artifactId>spring-security-test</artifactId>
+            <scope>test</scope>
+        </dependency>
+
+        <!-- Testcontainers: cart's tests run against a real PostgreSQL 16, matching
+             production. An in-memory database would not enforce the partial unique
+             index behind "one ACTIVE cart per user", so the concurrency test would
+             pass without testing anything. Versions come from spring-boot-dependencies. -->
+        <dependency>
+            <groupId>org.springframework.boot</groupId>
+            <artifactId>spring-boot-testcontainers</artifactId>
+            <scope>test</scope>
+        </dependency>
+        <dependency>
+            <groupId>org.testcontainers</groupId>
+            <artifactId>junit-jupiter</artifactId>
+            <scope>test</scope>
+        </dependency>
+        <dependency>
+            <groupId>org.testcontainers</groupId>
+            <artifactId>postgresql</artifactId>
+            <scope>test</scope>
+        </dependency>
+
         <!-- gRPC Spring Boot Starter -->
         <dependency>
             <groupId>net.devh</groupId>
