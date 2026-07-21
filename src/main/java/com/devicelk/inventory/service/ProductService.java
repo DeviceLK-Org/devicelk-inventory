@@ -1,5 +1,6 @@
 package com.devicelk.inventory.service;
 
+import com.devicelk.inventory.ProductSnapshot;
 import com.devicelk.inventory.api.ProductResponseDTO;
 import com.devicelk.inventory.api.ProductWriteRequest;
 import com.devicelk.inventory.exception.ProductNotFoundException;
@@ -10,6 +11,7 @@ import org.springframework.data.domain.Pageable;
 
 import java.math.BigDecimal;
 import java.util.List;
+import java.util.Optional;
 
 /**
  * <b>Service</b> layer contract for product business logic.
@@ -93,6 +95,39 @@ public interface ProductService {
      * @return the matching products as response DTOs (empty list if none match)
      */
     List<ProductResponseDTO> getProductsByIds(List<Long> ids);
+
+    /**
+     * Reads a product in the cents-native form other modules consume through
+     * {@link com.devicelk.inventory.InventoryFacade}.
+     * <p>
+     * Distinct from {@link #getProductById(Long)} in two ways that matter to a
+     * caller storing the result. It carries {@code priceCents} verbatim instead
+     * of the {@code BigDecimal} the REST DTO renders for display, so a module
+     * snapshotting a price keeps inventory's exact integer rather than one
+     * reconstructed from a formatted string. And a missing product is an empty
+     * {@link Optional} rather than a {@link ProductNotFoundException}: that
+     * exception is internal to this module, so a sibling module cannot catch it
+     * without violating the boundary.
+     *
+     * @param id the product id
+     * @return the snapshot, or {@link Optional#empty()} if no such product exists
+     */
+    Optional<ProductSnapshot> getProductSnapshot(Long id);
+
+    /**
+     * Batch form of {@link #getProductSnapshot(Long)}.
+     * <p>
+     * Resolves products and their stock rows in a fixed number of queries — one
+     * for each table — however many ids are supplied, so a caller rendering a
+     * list never degenerates into a per-row lookup.
+     * <p>
+     * Ids that match nothing are omitted rather than reported, so the result may
+     * be shorter than the input and carries no positional relationship to it.
+     *
+     * @param ids the product ids to read
+     * @return snapshots for the ids that exist, in no guaranteed order
+     */
+    List<ProductSnapshot> getProductSnapshots(List<Long> ids);
 
     /**
      * Performs a paginated, filtered search over the inventory.

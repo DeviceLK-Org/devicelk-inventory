@@ -1,5 +1,6 @@
 package com.devicelk.inventory.service;
 
+import com.devicelk.inventory.ProductSnapshot;
 import com.devicelk.inventory.api.ProductResponseDTO;
 import com.devicelk.inventory.api.ProductWriteRequest;
 import com.devicelk.inventory.domain.Category;
@@ -23,6 +24,7 @@ import org.springframework.transaction.annotation.Transactional;
 import java.math.BigDecimal;
 import java.util.List;
 import java.util.Map;
+import java.util.Optional;
 import java.util.function.Function;
 import java.util.stream.Collectors;
 
@@ -180,6 +182,27 @@ class ProductServiceImpl implements ProductService {
 
     @Override
     @Transactional(readOnly = true)
+    public Optional<ProductSnapshot> getProductSnapshot(Long id) {
+        return productRepository.findById(id).map(product -> {
+            Stock stock = stockRepository.findById(id).orElse(null);
+            if (stock == null) {
+                log.warn("Stock record missing for product ID: {} ({}); reporting zero availability",
+                        product.getId(), product.getName());
+            }
+            return new ProductSnapshot(
+                    product.getId(),
+                    product.getName(),
+                    product.getPriceCents(),
+                    product.getCurrency(),
+                    // No stock row means nothing is known to be sellable. Zero is
+                    // the safe reading: it blocks a sale rather than waving one
+                    // through on the strength of a missing record.
+                    stock == null ? 0 : stock.getAvailableQty());
+        });
+    }
+
+    @Override
+    @Transactional(readOnly = true)
     public Page<ProductResponseDTO> searchProducts(String name,
                                                    String brand,
                                                    String category,
@@ -227,6 +250,31 @@ class ProductServiceImpl implements ProductService {
         // One stock query for the whole page, not one per product.
         Map<Long, Stock> stockByProductId = stockByProductId(page.getContent());
         return page.map(p -> mapToDTO(p, stockByProductId.get(p.getId())));
+    }
+
+    @Override
+    @Transactional(readOnly = true)
+    public List<ProductSnapshot> getProductSnapshots(List<Long> ids) {
+        if (ids.isEmpty()) {
+            // Short-circuit: an empty IN () is both pointless and, on some
+            // dialects, invalid SQL.
+            return List.of();
+        }
+        List<Product> products = productRepository.findByIdIn(ids);
+        // One stock query for the whole batch — the same trick mapToDTOs uses,
+        // and the reason this stays two queries regardless of batch size.
+        Map<Long, Stock> stockByProductId = stockByProductId(products);
+        return products.stream()
+                .map(product -> {
+                    Stock stock = stockByProductId.get(product.getId());
+                    return new ProductSnapshot(
+                            product.getId(),
+                            product.getName(),
+                            product.getPriceCents(),
+                            product.getCurrency(),
+                            stock == null ? 0 : stock.getAvailableQty());
+                })
+                .toList();
     }
 
     /**
