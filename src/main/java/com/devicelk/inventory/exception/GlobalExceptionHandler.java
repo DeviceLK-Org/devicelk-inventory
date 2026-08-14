@@ -6,6 +6,7 @@ import org.springframework.orm.ObjectOptimisticLockingFailureException;
 import org.springframework.web.bind.MethodArgumentNotValidException;
 import org.springframework.web.bind.annotation.ExceptionHandler;
 import org.springframework.web.bind.annotation.RestControllerAdvice;
+import org.springframework.web.multipart.MaxUploadSizeExceededException;
 
 import java.time.LocalDateTime;
 import java.util.LinkedHashMap;
@@ -77,5 +78,43 @@ public class GlobalExceptionHandler {
     @ExceptionHandler(IllegalArgumentException.class)
     public ResponseEntity<String> handleIllegalArgumentException(IllegalArgumentException ex) {
         return new ResponseEntity<>(ex.getMessage(), HttpStatus.CONFLICT); // Returns HTTP 409 Conflict
+    }
+
+    /**
+     * Maps a rejected spec document to HTTP 400 Bad Request.
+     * <p>
+     * This is precisely why {@link InvalidDocumentException} exists as its own
+     * type rather than reusing {@code IllegalArgumentException}: the handler
+     * directly above maps that to 409, and a bad filename is a validation
+     * failure, not a conflict.
+     */
+    @ExceptionHandler(InvalidDocumentException.class)
+    public ResponseEntity<String> handleInvalidDocument(InvalidDocumentException ex) {
+        return new ResponseEntity<>(ex.getMessage(), HttpStatus.BAD_REQUEST);
+    }
+
+    /**
+     * Maps an oversize upload to HTTP 413 Payload Too Large.
+     * <p>
+     * Raised by Spring's multipart resolver before the controller runs, so the
+     * ceiling in {@code spring.servlet.multipart.max-file-size} is the single
+     * place the limit is enforced.
+     */
+    @ExceptionHandler(MaxUploadSizeExceededException.class)
+    public ResponseEntity<String> handleUploadTooLarge(MaxUploadSizeExceededException ex) {
+        return new ResponseEntity<>("The document exceeds the 5MB upload limit.",
+                HttpStatus.PAYLOAD_TOO_LARGE);
+    }
+
+    /**
+     * Maps an AWS failure to HTTP 502 Bad Gateway.
+     * <p>
+     * 502 rather than 500 on purpose: the fault is in a service this one calls
+     * out to — typically IAM or credentials — not in this service's own logic,
+     * and the status is what tells the reader where to look.
+     */
+    @ExceptionHandler(DocumentStorageException.class)
+    public ResponseEntity<String> handleStorageFailure(DocumentStorageException ex) {
+        return new ResponseEntity<>(ex.getMessage(), HttpStatus.BAD_GATEWAY);
     }
 }
