@@ -1,5 +1,7 @@
 package com.devicelk.inventory.service;
 
+import com.devicelk.inventory.api.DocumentState;
+import com.devicelk.inventory.api.DocumentSummary;
 import com.devicelk.inventory.api.IngestionJobResponse;
 import com.devicelk.inventory.api.ProductResponseDTO;
 import com.devicelk.inventory.config.DocumentProperties;
@@ -19,10 +21,24 @@ import software.amazon.awssdk.services.bedrockagent.BedrockAgentClient;
 import software.amazon.awssdk.services.bedrockagent.model.ConflictException;
 import software.amazon.awssdk.services.bedrockagent.model.GetIngestionJobRequest;
 import software.amazon.awssdk.services.bedrockagent.model.IngestionJob;
+import software.amazon.awssdk.services.bedrockagent.model.ListKnowledgeBaseDocumentsRequest;
+import software.amazon.awssdk.services.bedrockagent.model.ListKnowledgeBaseDocumentsResponse;
 import software.amazon.awssdk.services.bedrockagent.model.StartIngestionJobRequest;
 import software.amazon.awssdk.services.s3.S3Client;
 import software.amazon.awssdk.services.s3.model.DeleteObjectRequest;
+import software.amazon.awssdk.services.s3.model.ListObjectsV2Request;
+import software.amazon.awssdk.services.s3.model.ListObjectsV2Response;
 import software.amazon.awssdk.services.s3.model.PutObjectRequest;
+import software.amazon.awssdk.services.s3.model.S3Object;
+
+import java.util.ArrayList;
+import java.util.HashSet;
+import java.util.LinkedHashMap;
+import java.util.List;
+import java.util.Map;
+import java.util.Set;
+import java.util.TreeSet;
+import java.util.stream.Collectors;
 
 /**
  * Default {@link ProductDocumentService}.
@@ -103,6 +119,97 @@ class ProductDocumentServiceImpl implements ProductDocumentService {
         // and duplicating either here would fork the one conversion this
         // codebase is most careful to keep in a single place.
         return productService.getProductById(productId);
+    }
+
+    @Override
+    @Transactional(readOnly = true)
+    public List<DocumentSummary> listDocuments() {
+        Map<String, S3Object> inBucket = listBucketObjects();
+        Set<String> inKnowledgeBase = listIndexedKeys();
+
+        // TreeSet so the page has a stable, alphabetical order without the
+        // caller needing to sort.
+        Set<String> allKeys = new TreeSet<>(inBucket.keySet());
+        allKeys.addAll(inKnowledgeBase);
+
+        Map<String, Product> byKey = products.findByDocumentKeyIn(allKeys).stream()
+                .collect(Collectors.toMap(Product::getDocumentKey, p -> p, (a, b) -> a));
+
+        List<DocumentSummary> summaries = new ArrayList<>(allKeys.size());
+        for (String key : allKeys) {
+            S3Object object = inBucket.get(key);
+            boolean indexed = inKnowledgeBase.contains(key);
+            DocumentState state = object == null ? DocumentState.PENDING_REMOVAL
+                    : indexed ? DocumentState.INDEXED
+                    : DocumentState.PENDING_INGEST;
+            Product product = byKey.get(key);
+            summaries.add(new DocumentSummary(
+                    key,
+                    object == null ? null : object.size(),
+                    object == null ? null : object.lastModified(),
+                    product == null ? null : product.getId(),
+                    product == null ? null : product.getName(),
+                    state));
+        }
+        return summaries;
+    }
+
+    /**
+     * Every object in the bucket, keyed by object key.
+     * <p>
+     * Pages explicitly rather than assuming a single response: the bucket holds
+     * ten objects today, but a listing that silently truncates would report
+     * documents as missing rather than failing, which is the worse outcome.
+     */
+    private Map<String, S3Object> listBucketObjects() {
+        Map<String, S3Object> objects = new LinkedHashMap<>();
+        String token = null;
+        try {
+            do {
+                ListObjectsV2Response response = s3.listObjectsV2(ListObjectsV2Request.builder()
+                        .bucket(properties.bucket())
+                        .continuationToken(token)
+                        .build());
+                response.contents().forEach(o -> objects.put(o.key(), o));
+                token = Boolean.TRUE.equals(response.isTruncated())
+                        ? response.nextContinuationToken() : null;
+            } while (token != null);
+        } catch (SdkException e) {
+            throw new DocumentStorageException("Could not list documents in S3.", e);
+        }
+        return objects;
+    }
+
+    /**
+     * Keys the knowledge base currently has indexed.
+     * <p>
+     * Bedrock reports absolute {@code s3://bucket/key} URIs, so they are reduced
+     * to bare keys. Entries from any other bucket are filtered out rather than
+     * assumed to be ours — a knowledge base can have more than one source.
+     */
+    private Set<String> listIndexedKeys() {
+        String prefix = "s3://" + properties.bucket() + "/";
+        Set<String> keys = new HashSet<>();
+        String token = null;
+        try {
+            do {
+                ListKnowledgeBaseDocumentsResponse response =
+                        bedrock.listKnowledgeBaseDocuments(ListKnowledgeBaseDocumentsRequest.builder()
+                                .knowledgeBaseId(properties.knowledgeBaseId())
+                                .dataSourceId(properties.dataSourceId())
+                                .nextToken(token)
+                                .build());
+                response.documentDetails().stream()
+                        .map(d -> d.identifier().s3().uri())
+                        .filter(uri -> uri.startsWith(prefix))
+                        .map(uri -> uri.substring(prefix.length()))
+                        .forEach(keys::add);
+                token = response.nextToken();
+            } while (token != null);
+        } catch (SdkException e) {
+            throw new DocumentStorageException("Could not list knowledge base documents.", e);
+        }
+        return keys;
     }
 
     @Override

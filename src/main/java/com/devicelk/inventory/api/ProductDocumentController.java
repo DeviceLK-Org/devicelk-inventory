@@ -12,6 +12,7 @@ import org.springframework.web.bind.annotation.RestController;
 import org.springframework.web.multipart.MultipartFile;
 
 import java.io.IOException;
+import java.util.List;
 
 /**
  * Spec-document endpoints, rooted at {@code /inventory} alongside
@@ -53,6 +54,17 @@ public class ProductDocumentController {
         }
         return ResponseEntity.ok(
                 documentService.uploadDocument(id, file.getOriginalFilename(), content));
+    }
+
+    /**
+     * Every known spec document, with its knowledge-base state.
+     * <p>
+     * Backs the portal's Knowledge base page. Includes documents that exist only
+     * in the knowledge base — see {@code DocumentState.PENDING_REMOVAL}.
+     */
+    @GetMapping("/documents")
+    public ResponseEntity<List<DocumentSummary>> list() {
+        return ResponseEntity.ok(documentService.listDocuments());
     }
 
     /**

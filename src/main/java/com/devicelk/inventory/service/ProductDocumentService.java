@@ -1,7 +1,10 @@
 package com.devicelk.inventory.service;
 
+import com.devicelk.inventory.api.DocumentSummary;
 import com.devicelk.inventory.api.IngestionJobResponse;
 import com.devicelk.inventory.api.ProductResponseDTO;
+
+import java.util.List;
 
 /**
  * Storage lifecycle for product spec documents — the {@code .md} sheets that
@@ -31,6 +34,19 @@ public interface ProductDocumentService {
      * @throws com.devicelk.inventory.exception.DocumentStorageException  S3 refused or was unreachable
      */
     ProductResponseDTO uploadDocument(Long productId, String originalFilename, byte[] content);
+
+    /**
+     * Every known spec document: the <b>union</b> of what is in the bucket and
+     * what the knowledge base has indexed.
+     * <p>
+     * The union is the point. A document deleted from S3 but still indexed would
+     * be invisible to a bucket-only listing while the AI kept answering from it,
+     * so each row carries a {@link com.devicelk.inventory.api.DocumentState}
+     * saying whether the AI can currently see it.
+     *
+     * @throws com.devicelk.inventory.exception.DocumentStorageException S3 or Bedrock was unreachable
+     */
+    List<DocumentSummary> listDocuments();
 
     /**
      * Starts an ingestion job so the knowledge base catches up with the bucket.
