@@ -107,6 +107,18 @@ public class GlobalExceptionHandler {
     }
 
     /**
+     * Maps "a sync is already running" to HTTP 409 Conflict.
+     * <p>
+     * Genuinely a conflict rather than a failure: Bedrock allows one ingestion
+     * job per data source, and the job already in flight will pick up whatever
+     * is waiting. The portal reports this as information.
+     */
+    @ExceptionHandler(SyncInProgressException.class)
+    public ResponseEntity<String> handleSyncInProgress(SyncInProgressException ex) {
+        return new ResponseEntity<>(ex.getMessage(), HttpStatus.CONFLICT);
+    }
+
+    /**
      * Maps an AWS failure to HTTP 502 Bad Gateway.
      * <p>
      * 502 rather than 500 on purpose: the fault is in a service this one calls

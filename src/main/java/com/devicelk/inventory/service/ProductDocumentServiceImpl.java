@@ -1,11 +1,13 @@
 package com.devicelk.inventory.service;
 
+import com.devicelk.inventory.api.IngestionJobResponse;
 import com.devicelk.inventory.api.ProductResponseDTO;
 import com.devicelk.inventory.config.DocumentProperties;
 import com.devicelk.inventory.domain.Product;
 import com.devicelk.inventory.exception.DocumentStorageException;
 import com.devicelk.inventory.exception.InvalidDocumentException;
 import com.devicelk.inventory.exception.ProductNotFoundException;
+import com.devicelk.inventory.exception.SyncInProgressException;
 import com.devicelk.inventory.repository.ProductRepository;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
@@ -14,6 +16,10 @@ import org.springframework.transaction.annotation.Transactional;
 import software.amazon.awssdk.core.exception.SdkException;
 import software.amazon.awssdk.core.sync.RequestBody;
 import software.amazon.awssdk.services.bedrockagent.BedrockAgentClient;
+import software.amazon.awssdk.services.bedrockagent.model.ConflictException;
+import software.amazon.awssdk.services.bedrockagent.model.GetIngestionJobRequest;
+import software.amazon.awssdk.services.bedrockagent.model.IngestionJob;
+import software.amazon.awssdk.services.bedrockagent.model.StartIngestionJobRequest;
 import software.amazon.awssdk.services.s3.S3Client;
 import software.amazon.awssdk.services.s3.model.DeleteObjectRequest;
 import software.amazon.awssdk.services.s3.model.PutObjectRequest;
@@ -97,6 +103,41 @@ class ProductDocumentServiceImpl implements ProductDocumentService {
         // and duplicating either here would fork the one conversion this
         // codebase is most careful to keep in a single place.
         return productService.getProductById(productId);
+    }
+
+    @Override
+    public IngestionJobResponse startSync() {
+        try {
+            IngestionJob job = bedrock.startIngestionJob(StartIngestionJobRequest.builder()
+                    .knowledgeBaseId(properties.knowledgeBaseId())
+                    .dataSourceId(properties.dataSourceId())
+                    .build()).ingestionJob();
+            log.info("Started knowledge base ingestion job {}", job.ingestionJobId());
+            return toResponse(job);
+        } catch (ConflictException e) {
+            // Not a fault: Bedrock allows one job per data source at a time, and
+            // the running job will pick up whatever is waiting anyway.
+            throw new SyncInProgressException("A knowledge base sync is already running.");
+        } catch (SdkException e) {
+            throw new DocumentStorageException("Could not start the knowledge base sync.", e);
+        }
+    }
+
+    @Override
+    public IngestionJobResponse getSyncStatus(String jobId) {
+        try {
+            return toResponse(bedrock.getIngestionJob(GetIngestionJobRequest.builder()
+                    .knowledgeBaseId(properties.knowledgeBaseId())
+                    .dataSourceId(properties.dataSourceId())
+                    .ingestionJobId(jobId)
+                    .build()).ingestionJob());
+        } catch (SdkException e) {
+            throw new DocumentStorageException("Could not read the sync status.", e);
+        }
+    }
+
+    private IngestionJobResponse toResponse(IngestionJob job) {
+        return new IngestionJobResponse(job.ingestionJobId(), job.statusAsString());
     }
 
     /**

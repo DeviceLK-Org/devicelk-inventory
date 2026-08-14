@@ -1,5 +1,6 @@
 package com.devicelk.inventory.service;
 
+import com.devicelk.inventory.api.IngestionJobResponse;
 import com.devicelk.inventory.api.ProductResponseDTO;
 
 /**
@@ -30,4 +31,25 @@ public interface ProductDocumentService {
      * @throws com.devicelk.inventory.exception.DocumentStorageException  S3 refused or was unreachable
      */
     ProductResponseDTO uploadDocument(Long productId, String originalFilename, byte[] content);
+
+    /**
+     * Starts an ingestion job so the knowledge base catches up with the bucket.
+     * <p>
+     * Acts on the whole data source, not one document: it picks up every new
+     * file and drops every deleted one in a single pass. Returns as soon as the
+     * job is accepted, not when it finishes — poll {@link #getSyncStatus} for
+     * that.
+     *
+     * @throws com.devicelk.inventory.exception.SyncInProgressException a job is already running
+     * @throws com.devicelk.inventory.exception.DocumentStorageException Bedrock refused or was unreachable
+     */
+    IngestionJobResponse startSync();
+
+    /**
+     * Current state of a previously started job, so the portal can poll until it
+     * reads {@code COMPLETE} or {@code FAILED}.
+     *
+     * @param jobId the id returned by {@link #startSync()}
+     */
+    IngestionJobResponse getSyncStatus(String jobId);
 }
