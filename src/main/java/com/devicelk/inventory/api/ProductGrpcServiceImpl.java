@@ -390,6 +390,12 @@ class ProductGrpcServiceImpl extends ProductGrpcServiceGrpc.ProductGrpcServiceIm
                 .setName(product.getName())
                 // Protobuf setters reject null — the description column is nullable
                 .setDescription(product.getDescription() == null ? "" : product.getDescription())
+                // The same price as a machine-readable pair. DeviceLK-Commerce reads
+                // these two rather than parsing the display string above, so the
+                // integer it writes into a cart line — and then into order history —
+                // is byte-for-byte the one stored here.
+                .setPriceCents(product.getPriceCents())
+                .setCurrency(product.getCurrency())
                 .build();
     }
 }

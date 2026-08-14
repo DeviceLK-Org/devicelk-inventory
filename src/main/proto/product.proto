@@ -54,6 +54,25 @@ message InventoryResponse {
   bool is_available = 4;
   string name = 5;
   string description = 6; // Empty string when the product has no description
+
+  // --- Money, in the form a program should consume ---------------------------
+  // `price` above is a DISPLAY string, and it stays for DeviceLK-AIRetrieval,
+  // which puts it in front of a language model. These two are for callers that
+  // compute with it.
+  //
+  // DeviceLK-Commerce snapshots a price into a cart line and later into an order
+  // line, where it becomes the figure a customer is charged. It must store the
+  // exact integer inventory holds — parsing it back out of a decimal string
+  // reintroduces precisely the rounding question the cents representation exists
+  // to eliminate, and it would do so at the point where money is committed.
+  int64 price_cents = 7;
+
+  // ISO-4217 code that price_cents is denominated in. Carried explicitly rather
+  // than assumed: every row is LKR today, but a money value that has to be
+  // interpreted by convention rather than by its own content is a value waiting
+  // to be misread the day that stops being true — and the caller that would
+  // misread it is the one writing order history.
+  string currency = 8;
 }
 
 message BulkInventoryRequest {
