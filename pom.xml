@@ -200,10 +200,30 @@
         </dependency>
 
         <!-- Product spec documents (.md) are stored in S3; the bucket backs the
-             Bedrock knowledge base that DeviceLK-AIRetrieval queries. -->
+             Bedrock knowledge base that DeviceLK-AIRetrieval queries.
+
+             apache-client is EXCLUDED here and from bedrockagent below, and
+             url-connection-client used instead. Why: the AWS SDK's default sync
+             transport is Apache HttpClient 5 and 2.47.4 calls
+             org.apache.hc.client5.http.ssl.TlsSocketStrategy, which only exists
+             from httpclient5 5.4. Spring Boot 3.2.4 manages httpclient5 at 5.2.3
+             and, as the parent POM, wins over the AWS bom — so the S3Client bean
+             died at startup with NoClassDefFoundError.
+
+             Overriding httpclient5 to 5.4 would fix it too, but that swaps the
+             HTTP stack underneath Eureka and everything else Boot manages, to
+             satisfy a dependency only these two clients have. The URL-connection
+             transport has no third-party dependencies at all and is more than
+             adequate for kilobyte uploads and a handful of control-plane calls. -->
         <dependency>
             <groupId>software.amazon.awssdk</groupId>
             <artifactId>s3</artifactId>
+            <exclusions>
+                <exclusion>
+                    <groupId>software.amazon.awssdk</groupId>
+                    <artifactId>apache-client</artifactId>
+                </exclusion>
+            </exclusions>
         </dependency>
 
         <!-- Bedrock CONTROL plane: StartIngestionJob / GetIngestionJob /
@@ -213,6 +233,18 @@
         <dependency>
             <groupId>software.amazon.awssdk</groupId>
             <artifactId>bedrockagent</artifactId>
+            <exclusions>
+                <exclusion>
+                    <groupId>software.amazon.awssdk</groupId>
+                    <artifactId>apache-client</artifactId>
+                </exclusion>
+            </exclusions>
+        </dependency>
+
+        <!-- The sync transport for both clients above. See the exclusion note. -->
+        <dependency>
+            <groupId>software.amazon.awssdk</groupId>
+            <artifactId>url-connection-client</artifactId>
         </dependency>
 
     </dependencies>
