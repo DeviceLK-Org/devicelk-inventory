@@ -10,7 +10,9 @@ import org.springframework.data.jpa.repository.JpaRepository;
 import org.springframework.data.jpa.repository.JpaSpecificationExecutor;
 import org.springframework.stereotype.Repository;
 
+import java.util.Collection;
 import java.util.List;
+import java.util.Optional;
 
 /**
  * <b>Repository</b> layer for {@link Product}.
@@ -40,6 +42,26 @@ public interface ProductRepository
      * @return the matching products (empty list if none match)
      */
     List<Product> findByIdIn(List<Long> ids);
+
+    /**
+     * Finds the product owning a given spec-document key, if any.
+     * <p>
+     * Used when a document is deleted, to clear the now-dangling reference.
+     * Returns empty for the legacy documents that sit at the bucket root and
+     * belong to no product.
+     *
+     * @param documentKey the S3 object key
+     */
+    Optional<Product> findByDocumentKey(String documentKey);
+
+    /**
+     * Bulk fetch by spec-document key, so the knowledge-base listing can label
+     * every row with its product in one query rather than one lookup per file.
+     *
+     * @param documentKeys the S3 object keys to resolve
+     * @return the products owning any of those keys (empty list if none do)
+     */
+    List<Product> findByDocumentKeyIn(Collection<String> documentKeys);
 
     /**
      * Dynamic filter backing the {@code SearchProducts} gRPC RPC. Each criterion

@@ -360,7 +360,8 @@ class ProductServiceImpl implements ProductService {
                 new BigDecimal(Money.toDisplayString(p.getPriceCents())),
                 stock == null ? 0 : stock.getAvailableQty(),
                 stock == null ? 0 : stock.getMinStockThreshold(),
-                p.getDescription()
+                p.getDescription(),
+                p.getDocumentKey()
         );
     }
 }

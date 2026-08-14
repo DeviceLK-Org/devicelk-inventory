@@ -93,6 +93,22 @@ public class Product {
     @Column(length = 1000)
     private String description;
 
+    /**
+     * S3 object key of this product's spec document, or {@code null} when none
+     * has been uploaded.
+     * <p>
+     * The bucket is deliberately absent: it is configuration, not data. Holding a
+     * key alone means changing buckets stays a config change rather than becoming
+     * a data migration across every row.
+     * <p>
+     * A non-null value says the document exists in storage. It says nothing about
+     * whether the knowledge base has indexed it — that is answered by comparing
+     * against the knowledge base, never by this column.
+     */
+    @Size(max = 512)
+    @Column(name = "document_key", length = 512)
+    private String documentKey;
+
     /** No-args constructor required by JPA. */
     public Product() {
     }
@@ -166,5 +182,13 @@ public class Product {
 
     public void setDescription(String description) {
         this.description = description;
+    }
+
+    public String getDocumentKey() {
+        return documentKey;
+    }
+
+    public void setDocumentKey(String documentKey) {
+        this.documentKey = documentKey;
     }
 }

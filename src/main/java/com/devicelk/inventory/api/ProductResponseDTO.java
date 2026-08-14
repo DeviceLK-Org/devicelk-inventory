@@ -23,6 +23,12 @@ public record ProductResponseDTO(
         BigDecimal price,
         Integer stockQuantity,
         Integer minStockThreshold,
-        String description
+        String description,
+        /**
+         * S3 key of the product's spec document, or {@code null} if it has none.
+         * The admin portal uses its presence to show a document indicator; it does
+         * not imply the knowledge base has indexed the document.
+         */
+        String documentKey
 ) {
 }
