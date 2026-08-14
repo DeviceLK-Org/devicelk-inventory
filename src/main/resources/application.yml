@@ -12,10 +12,12 @@ spring:
     name: devicelk-inventory-service
 
   datasource:
-    # Host port 5433 maps to the devicelk-commerce-db container (docker-compose.yml).
-    # One database for the whole commerce monolith; each module owns its own schema
-    # (inventory / cart / orders — created by init/01-schemas.sql).
-    url: ${DB_URL:jdbc:postgresql://localhost:5433/devicelk_commerce}
+    # Host port 5433 maps to the devicelk-postgres container (docker-compose.yml).
+    # This service's OWN database: it contains the inventory schema and nothing
+    # else. Cart and order data live in devicelk_commerce, a separate database on
+    # the same dev container, reachable only by DeviceLK-Commerce — there is no
+    # connection from here to there, and no query that could span them.
+    url: ${DB_URL:jdbc:postgresql://localhost:5433/devicelk_inventory}
     username: ${DB_USERNAME:devicelk_admin}
     password: ${DB_PASSWORD:devicelk_pass}
     driver-class-name: org.postgresql.Driver
@@ -38,11 +40,13 @@ spring:
 
   jpa:
     hibernate:
-      # Dev only: Hibernate creates/evolves tables in each module's schema automatically.
-      # Flyway now owns the schema and runs first; on a fresh DB it has already created
-      # everything, so this update pass is a no-op. Becomes 'validate' when the modules
-      # are split into services and Flyway is the sole schema authority.
-      ddl-auto: update
+      # Flyway is now the sole schema authority, so Hibernate checks rather than
+      # builds. 'update' was the right setting while the schema was hand-built and
+      # evolving; keeping it past that point means Hibernate can silently add a
+      # column no migration describes, and the drift is only discovered on the
+      # first database where ddl-auto was never allowed to run — production.
+      # 'validate' turns that into a startup failure here instead.
+      ddl-auto: validate
     show-sql: true
     properties:
       hibernate:

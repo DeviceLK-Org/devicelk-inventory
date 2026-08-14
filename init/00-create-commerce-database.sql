@@ -1,0 +1,20 @@
+-- Creates the second database on the shared dev PostgreSQL instance.
+--
+-- Runs only on the FIRST startup with an empty data volume
+-- (docker-entrypoint-initdb.d); changing it requires `docker compose down -v`.
+-- The entrypoint executes these files with psql against POSTGRES_DB
+-- (devicelk_inventory), so a plain CREATE DATABASE here is all that is needed.
+--
+-- WHY NO SCHEMAS ARE CREATED HERE ANYMORE
+--   This directory used to create the inventory / cart / orders schemas and the
+--   event_publication table by hand. It no longer does, and that is the point:
+--   each service's Flyway V1__baseline.sql now creates its own schemas on a fresh
+--   database. Creating them here first would make the database non-empty, which
+--   flips Flyway's baseline-on-migrate into ADOPTING it — writing a baseline row
+--   and never running V1 at all. The tables would then be built by Hibernate's
+--   ddl-auto instead of by the migration that is supposed to define them, and the
+--   baseline would go untested until the day it ran somewhere real.
+--
+--   Empty database in, Flyway builds it. That is the path we want exercised every
+--   time, including on this laptop.
+CREATE DATABASE devicelk_commerce;

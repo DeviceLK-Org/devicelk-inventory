@@ -1,25 +1,43 @@
 # ---------------------------------------------------------------------------
-# DeviceLK — Commerce modular monolith local infrastructure
-# Spins up a PostgreSQL 16 instance for the commerce database, shared by the
-# inventory / cart / orders modules (one schema per module, see ./init).
+# DeviceLK — shared local PostgreSQL for the commerce back end.
+#
+# ONE CONTAINER, TWO DATABASES:
+#   devicelk_inventory  → DeviceLK-Inventory  (schema: inventory)
+#   devicelk_commerce   → DeviceLK-Commerce   (schemas: cart, orders + event_publication)
+#
+# Separate DATABASES, not separate schemas in one database. A schema boundary is a
+# convention that a future join can quietly cross; a database boundary makes a
+# cross-service query impossible to write by accident, which is the property worth
+# having now that these are two services with two owners of their own data.
+#
+# The container is shared only because this is one developer laptop. In k3s these
+# are separate PostgreSQL instances, and nothing in either service's configuration
+# assumes otherwise — each connects by its own URL and knows nothing of the other.
+#
+# WHY THIS FILE LIVES IN THE INVENTORY REPOSITORY
+#   It has to live somewhere, and it was already here. DeviceLK-Commerce ships no
+#   compose file of its own and documents this dependency in its README: start the
+#   database from this directory, then run either service. The alternative — a
+#   compose file in each repository, each claiming port 5433 — fails the moment
+#   both are started.
 #
 # Credentials are read from ./.env — copy .env.example to .env first.
 #
 # Usage:
 #   docker compose up -d      # start the database in the background
 #   docker compose down       # stop the container (data is preserved)
-#   docker compose down -v    # stop and DELETE the data volume
+#   docker compose down -v    # stop and DELETE the data volume — both databases
 # ---------------------------------------------------------------------------
 
 services:
   postgres:
     image: postgres:16
-    container_name: devicelk-commerce-db
+    container_name: devicelk-postgres
     restart: unless-stopped
     environment:
-      # POSTGRES_DB makes the container create the 'devicelk_commerce'
-      # database automatically on first startup.
-      POSTGRES_DB: devicelk_commerce
+      # Creates devicelk_inventory on first startup. The second database is created
+      # by ./init/00-create-commerce-database.sql, which runs against this one.
+      POSTGRES_DB: devicelk_inventory
       POSTGRES_USER: ${POSTGRES_USER}
       POSTGRES_PASSWORD: ${POSTGRES_PASSWORD}
     ports:
@@ -27,17 +45,17 @@ services:
       - "5433:5432"
     volumes:
       # Named volume → data survives container restarts and recreations
-      - devicelk_commerce_data:/var/lib/postgresql/data
+      - devicelk_postgres_data:/var/lib/postgresql/data
       # Init scripts run ONLY on the first startup with an empty volume;
       # after changing them, recreate with `docker compose down -v && docker compose up -d`.
       - ./init:/docker-entrypoint-initdb.d:ro
     healthcheck:
-      test: ["CMD-SHELL", "pg_isready -U ${POSTGRES_USER} -d devicelk_commerce"]
+      test: ["CMD-SHELL", "pg_isready -U ${POSTGRES_USER} -d devicelk_inventory"]
       interval: 10s
       timeout: 5s
       retries: 5
       start_period: 10s
 
 volumes:
-  devicelk_commerce_data:
-    name: devicelk_commerce_data
+  devicelk_postgres_data:
+    name: devicelk_postgres_data

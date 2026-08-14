@@ -17,12 +17,21 @@ import org.testcontainers.containers.PostgreSQLContainer;
  * under test are enforced by PostgreSQL itself — partial unique indexes, the
  * cart's composite unique constraint, and the transaction-abort semantics the
  * concurrent-create path is written against.
+ * <p>
+ * <b>No init script: Flyway builds this database, exactly as it will build a real
+ * one.</b> An earlier version handed Testcontainers a {@code db/init-schemas.sql}
+ * that created the schemas up front. That was quietly self-defeating — it made the
+ * database non-empty, which flips Flyway's {@code baseline-on-migrate} from
+ * RUNNING {@code V1__baseline.sql} to ADOPTING the database and skipping it. The
+ * tables were then built by Hibernate's {@code ddl-auto}, and the migration that is
+ * supposed to define the schema was never executed by any test. Starting empty
+ * means every test run exercises V1 end to end, and {@code ddl-auto: validate}
+ * then asserts that what V1 built is what the entities expect.
  */
 public abstract class AbstractPostgresTest {
 
     protected static final PostgreSQLContainer<?> POSTGRES =
-            new PostgreSQLContainer<>("postgres:16")
-                    .withInitScript("db/init-schemas.sql");
+            new PostgreSQLContainer<>("postgres:16");
 
     static {
         POSTGRES.start();

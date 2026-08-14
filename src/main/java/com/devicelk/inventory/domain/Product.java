@@ -5,6 +5,8 @@ import jakarta.validation.constraints.NotBlank;
 import jakarta.validation.constraints.NotNull;
 import jakarta.validation.constraints.Positive;
 import jakarta.validation.constraints.Size;
+import org.hibernate.annotations.JdbcTypeCode;
+import org.hibernate.type.SqlTypes;
 
 /**
  * JPA entity representing a single product held in the DeviceLK inventory.
@@ -78,6 +80,13 @@ public class Product {
     @NotBlank(message = "Currency is required")
     @Size(min = 3, max = 3, message = "Currency must be a 3-letter ISO-4217 code")
     @Column(nullable = false, length = 3, columnDefinition = "char(3)")
+    // CHAR, not the VARCHAR Hibernate assumes for a String. Without this, the
+    // columnDefinition above builds a bpchar column that schema validation then
+    // rejects as the wrong type — DDL generation reads columnDefinition, while
+    // validation compares against the mapped JDBC type, and the two disagreed.
+    // Declaring the type here makes them agree on the fixed-width column that was
+    // intended: an ISO-4217 code is always exactly three characters.
+    @JdbcTypeCode(SqlTypes.CHAR)
     private String currency = DEFAULT_CURRENCY;
 
     @Size(max = 1000, message = "Description cannot exceed 1000 characters")
