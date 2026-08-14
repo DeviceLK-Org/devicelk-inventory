@@ -36,6 +36,10 @@
              Keep this in step with DeviceLK-Commerce's grpc.version. -->
         <grpc.version>1.63.0</grpc.version>
         <protobuf.version>3.25.3</protobuf.version>
+        <!-- Kept in step with DeviceLK-AIRetrieval's aws-sdk.version. Both services
+             talk to the same account and knowledge base; a version split between
+             them is the kind of skew that only shows up at runtime. -->
+        <aws-sdk.version>2.47.4</aws-sdk.version>
     </properties>
 
     <parent>
@@ -195,6 +199,22 @@
             <version>2.5.0</version>
         </dependency>
 
+        <!-- Product spec documents (.md) are stored in S3; the bucket backs the
+             Bedrock knowledge base that DeviceLK-AIRetrieval queries. -->
+        <dependency>
+            <groupId>software.amazon.awssdk</groupId>
+            <artifactId>s3</artifactId>
+        </dependency>
+
+        <!-- Bedrock CONTROL plane: StartIngestionJob / GetIngestionJob /
+             ListKnowledgeBaseDocuments. Deliberately NOT bedrockagentruntime —
+             that is the data-plane client AIRetrieval uses for Retrieve, and it
+             cannot start an ingestion job. -->
+        <dependency>
+            <groupId>software.amazon.awssdk</groupId>
+            <artifactId>bedrockagent</artifactId>
+        </dependency>
+
     </dependencies>
 
     <dependencyManagement>
@@ -220,6 +240,16 @@
                 <groupId>io.grpc</groupId>
                 <artifactId>grpc-bom</artifactId>
                 <version>${grpc.version}</version>
+                <type>pom</type>
+                <scope>import</scope>
+            </dependency>
+            <!-- Same reasoning as the gRPC bom above: manage every software.amazon.awssdk
+                 artifact from one place so the s3 and bedrockagent clients can never
+                 drift onto different core/http versions. -->
+            <dependency>
+                <groupId>software.amazon.awssdk</groupId>
+                <artifactId>bom</artifactId>
+                <version>${aws-sdk.version}</version>
                 <type>pom</type>
                 <scope>import</scope>
             </dependency>

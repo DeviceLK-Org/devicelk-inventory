@@ -1,6 +1,22 @@
 server:
   port: 8081 # Running port of the inventory (product) service
 
+# Product spec documents (.md) and the Bedrock knowledge base that indexes them.
+#
+# Credentials are deliberately absent: they come from the AWS default provider
+# chain (AWS_ACCESS_KEY_ID / AWS_SECRET_ACCESS_KEY / AWS_REGION, profiles, or an
+# instance role), exactly as DeviceLK-AIRetrieval resolves them. Nothing here is
+# a secret, so this block is safe to commit.
+#
+# Note the knowledge base only sees a document after an ingestion job runs —
+# writing to the bucket alone does NOT make it answerable.
+app:
+  documents:
+    bucket: ${DOCUMENTS_BUCKET:devicelk-product-documents}
+    knowledge-base-id: ${BEDROCK_KNOWLEDGE_BASE_ID:Q5RYFZBEX0}
+    data-source-id: ${BEDROCK_DATA_SOURCE_ID:OXIANAR0TN}
+    region: ${BEDROCK_REGION:us-east-1}
+
 grpc:
   server:
     port: 9090
@@ -10,6 +26,19 @@ spring:
   application:
     # Registered in Eureka as PRODUCT-SERVICE — matches the API Gateway route (lb://PRODUCT-SERVICE)
     name: devicelk-inventory-service
+
+  servlet:
+    multipart:
+      # The ONLY size check on a spec-document upload. The service performs none
+      # of its own: two limits with the same default is a trap where the lower
+      # wins silently and raising one appears to do nothing.
+      #
+      # 5MB is a guard against abuse rather than a real constraint — the largest
+      # existing spec sheet is 2.4KB. max-request-size sits above max-file-size so
+      # the multipart envelope around a maximum-size file does not trip the
+      # request limit first and report the wrong problem.
+      max-file-size: 5MB
+      max-request-size: 6MB
 
   datasource:
     # Host port 5433 maps to the devicelk-postgres container (docker-compose.yml).
@@ -47,7 +76,7 @@ spring:
       # first database where ddl-auto was never allowed to run — production.
       # 'validate' turns that into a startup failure here instead.
       ddl-auto: validate
-    show-sql: true
+    show-sql: false
     properties:
       hibernate:
         format_sql: true
