@@ -23,10 +23,16 @@ import org.springframework.security.web.SecurityFilterChain;
  * <b>Two chains, and the second one is not optional.</b> Putting Spring Security
  * on the classpath secures every endpoint by default and turns on CSRF — which
  * would have locked down the inventory REST API that the admin portal and the
- * AI retrieval service already use, and rejected their writes. The cart chain
- * therefore matches only the cart paths, and a second, lower-priority chain
- * explicitly restores open access to everything else, leaving those callers
- * exactly as they were.
+ * AI retrieval service already use, and rejected their writes. The authenticated
+ * chain therefore matches only the customer-facing paths, and a second,
+ * lower-priority chain explicitly restores open access to everything else,
+ * leaving those callers exactly as they were.
+ * <p>
+ * The authenticated chain covers cart <i>and</i> order paths together rather than
+ * getting a chain each. They have identical requirements — same realm, same
+ * stateless bearer-token handling, same reason CSRF does not apply — so a second
+ * chain would be a copy that can drift, and the first time it drifted the
+ * difference would be a gap in one of them.
  * <p>
  * The gRPC service on its own port is unaffected: it is a separate Netty server,
  * not part of the servlet filter chain, and the gRPC starter only installs
@@ -51,14 +57,24 @@ public class SecurityConfig {
     private static final String CART_PATHS = "/api/v1/cart/**";
 
     /**
-     * Requires a valid Keycloak JWT on the cart endpoints.
+     * Path prefix for everything the order module exposes.
+     * <p>
+     * Note the trailing {@code /**} matches {@code /api/v1/orders} itself as well
+     * as its sub-paths under Spring's MVC matcher, so the collection endpoint is
+     * covered and not left open by a pattern that only caught {@code /orders/x}.
+     */
+    private static final String ORDER_PATHS = "/api/v1/orders/**";
+
+    /**
+     * Requires a valid Keycloak JWT on the cart and order endpoints.
      * <p>
      * Resource server, not login: this application never redirects anyone to
      * Keycloak or holds a session. It takes a bearer token, checks the signature
      * against the realm's JWKS and the {@code iss} claim against the configured
      * issuer, and derives the user from it. A request without a usable token is
-     * rejected by the filter chain before any cart code runs — which is what
-     * makes {@code CartController}'s subject non-negotiable.
+     * rejected by the filter chain before any cart or order code runs — which is
+     * what makes the {@code subjectOf(Jwt)} guard in both controllers a check for
+     * misconfiguration rather than the thing holding attackers out.
      * <p>
      * Stateless and CSRF-free because the credential is a header the browser
      * does not attach automatically. CSRF defends against the ambient authority
@@ -67,9 +83,9 @@ public class SecurityConfig {
      */
     @Bean
     @Order(1)
-    SecurityFilterChain cartSecurityFilterChain(HttpSecurity http) throws Exception {
+    SecurityFilterChain authenticatedSecurityFilterChain(HttpSecurity http) throws Exception {
         return http
-                .securityMatcher(CART_PATHS)
+                .securityMatcher(CART_PATHS, ORDER_PATHS)
                 .authorizeHttpRequests(auth -> auth.anyRequest().authenticated())
                 .oauth2ResourceServer(oauth2 -> oauth2.jwt(Customizer.withDefaults()))
                 .sessionManagement(session ->

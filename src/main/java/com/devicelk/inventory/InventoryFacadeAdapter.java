@@ -1,6 +1,7 @@
 package com.devicelk.inventory;
 
 import com.devicelk.inventory.service.ProductService;
+import com.devicelk.inventory.service.StockReservationService;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
 
@@ -20,9 +21,12 @@ import java.util.Optional;
 class InventoryFacadeAdapter implements InventoryFacade {
 
     private final ProductService productService;
+    private final StockReservationService reservationService;
 
-    InventoryFacadeAdapter(ProductService productService) {
+    InventoryFacadeAdapter(ProductService productService,
+                           StockReservationService reservationService) {
         this.productService = productService;
+        this.reservationService = reservationService;
     }
 
     @Override
@@ -43,5 +47,28 @@ class InventoryFacadeAdapter implements InventoryFacade {
         return productService.getProductSnapshot(productId)
                 .map(snapshot -> snapshot.availableQty() >= quantity)
                 .orElse(false);
+    }
+
+    // The reservation methods carry no @Transactional of their own, unlike the
+    // reads above. That is not an omission. Each delegate is already
+    // @Transactional with the default REQUIRED propagation, so it joins the
+    // caller's checkout transaction — which is the entire point. Repeating the
+    // annotation here would change nothing at runtime while implying this layer
+    // is where the boundary starts, and the one thing a reader must not conclude
+    // about a reservation is that it commits on its own.
+
+    @Override
+    public void reserveStock(List<ReservationLine> lines) {
+        reservationService.reserve(lines);
+    }
+
+    @Override
+    public void releaseStock(List<ReservationLine> lines) {
+        reservationService.release(lines);
+    }
+
+    @Override
+    public void confirmReservation(List<ReservationLine> lines) {
+        reservationService.confirm(lines);
     }
 }

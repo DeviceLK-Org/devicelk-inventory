@@ -20,10 +20,28 @@ spring:
     password: ${DB_PASSWORD:devicelk_pass}
     driver-class-name: org.postgresql.Driver
 
+  flyway:
+    # Flyway is the single source of truth for the schema. It runs before Hibernate on
+    # startup, so a brand-new empty Postgres is brought up to the exact current schema
+    # from db/migration/V1__baseline.sql automatically.
+    #
+    # WHY baseline-on-migrate + baseline-version=1 — the split-brain reality:
+    #   * The existing hand-built dev DB (and any copy of it) already HAS the full
+    #     schema but no flyway_schema_history table. baseline-on-migrate tells Flyway
+    #     to adopt such a non-empty DB by writing a baseline row at version 1 instead
+    #     of running V1 — so V1 never re-runs and never drops or recreates live data.
+    #   * A fresh empty DB has no schema, so Flyway simply runs V1 from scratch.
+    # One migration set therefore serves both worlds: adopt-in-place vs build-from-zero.
+    baseline-on-migrate: true
+    baseline-version: 1
+    locations: classpath:db/migration
+
   jpa:
     hibernate:
       # Dev only: Hibernate creates/evolves tables in each module's schema automatically.
-      # Moves to 'validate' + Flyway migrations when the modules are split into services.
+      # Flyway now owns the schema and runs first; on a fresh DB it has already created
+      # everything, so this update pass is a no-op. Becomes 'validate' when the modules
+      # are split into services and Flyway is the sole schema authority.
       ddl-auto: update
     show-sql: true
     properties:

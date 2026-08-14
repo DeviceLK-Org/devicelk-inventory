@@ -1,5 +1,6 @@
 package com.devicelk.inventory.domain;
 
+import com.devicelk.inventory.InsufficientStockException;
 import jakarta.persistence.Column;
 import jakarta.persistence.Entity;
 import jakarta.persistence.Id;
@@ -86,6 +87,99 @@ public class Stock {
             throw new IllegalArgumentException("Insufficient stock!");
         }
         this.availableQty = newQty;
+    }
+
+    /**
+     * Holds units back for an in-flight order: available → reserved.
+     * <p>
+     * <b>A move, not a decrement.</b> The units leave {@link #availableQty} so
+     * nothing else can sell them, and arrive in {@link #reservedQty} so the
+     * business still knows they are on the shelf and who has a claim on them.
+     * Total units on hand — the sum of the two — is unchanged, because nothing
+     * physically left the warehouse; that only happens at
+     * {@link #confirmReserved(int)}. Decrementing availability without the
+     * matching increment would balance the sale but lose the fact that the stock
+     * exists, leaving {@link #release(int)} nothing to give back and a stock
+     * count that silently disagrees with the shelf.
+     *
+     * @param quantity units to hold; must be positive
+     * @throws IllegalArgumentException   if {@code quantity} is not positive —
+     *                                    a non-positive reservation would run
+     *                                    this transfer backwards and invent stock
+     * @throws InsufficientStockException if fewer than {@code quantity} units are
+     *                                    available to hold
+     */
+    public void reserve(int quantity) {
+        if (quantity <= 0) {
+            throw new IllegalArgumentException(
+                    "Reservation quantity must be positive, got " + quantity
+                            + " for product " + productId + ".");
+        }
+        if (availableQty < quantity) {
+            throw new InsufficientStockException(productId, quantity, availableQty);
+        }
+        this.availableQty -= quantity;
+        this.reservedQty += quantity;
+    }
+
+    /**
+     * Returns held units to the shelf: reserved → available.
+     * <p>
+     * The compensating action for {@link #reserve(int)} — a cancelled order, a
+     * refused payment, or a saga unwinding a checkout that failed after its
+     * reservation committed.
+     * <p>
+     * Releasing more than is held is rejected rather than clamped. Clamping to
+     * zero would let a double-compensation quietly manufacture available stock
+     * out of a bookkeeping error, and the resulting oversell would surface far
+     * from its cause. This is a caller bug, so it fails loudly at the point the
+     * ledger stops adding up.
+     *
+     * @param quantity units to return; must be positive
+     * @throws IllegalArgumentException if {@code quantity} is not positive
+     * @throws IllegalStateException    if fewer than {@code quantity} units are
+     *                                  currently reserved
+     */
+    public void release(int quantity) {
+        if (quantity <= 0) {
+            throw new IllegalArgumentException(
+                    "Release quantity must be positive, got " + quantity
+                            + " for product " + productId + ".");
+        }
+        if (reservedQty < quantity) {
+            throw new IllegalStateException(
+                    "Cannot release " + quantity + " units of product " + productId
+                            + ": only " + reservedQty + " are reserved.");
+        }
+        this.reservedQty -= quantity;
+        this.availableQty += quantity;
+    }
+
+    /**
+     * Consumes held units: the sale completed and the goods left the warehouse.
+     * <p>
+     * Only {@link #reservedQty} falls. {@link #availableQty} was already reduced
+     * by {@link #reserve(int)} and must not be touched again — doing so would
+     * charge the same units to the shelf twice, which is the classic way a
+     * confirm step turns a correct reservation into phantom oversell.
+     *
+     * @param quantity units to consume; must be positive
+     * @throws IllegalArgumentException if {@code quantity} is not positive
+     * @throws IllegalStateException    if fewer than {@code quantity} units are
+     *                                  currently reserved
+     */
+    public void confirmReserved(int quantity) {
+        if (quantity <= 0) {
+            throw new IllegalArgumentException(
+                    "Confirmation quantity must be positive, got " + quantity
+                            + " for product " + productId + ".");
+        }
+        if (reservedQty < quantity) {
+            throw new IllegalStateException(
+                    "Cannot confirm " + quantity + " units of product " + productId
+                            + ": only " + reservedQty + " are reserved.");
+        }
+        this.reservedQty -= quantity;
     }
 
     /** Whether the available quantity has reached or fallen below the re-order level. */
