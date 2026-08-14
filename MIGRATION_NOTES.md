@@ -1,5 +1,44 @@
 # Flyway adoption — verification notes
 
+> **SUPERSEDED IN PART — read this first.**
+>
+> Everything below documents the Flyway adoption of the **modular monolith**, whose
+> `V1__baseline.sql` created the `inventory`, `cart` and `orders` schemas plus
+> `public.event_publication` in a single `devicelk_commerce` database. That database
+> and that baseline no longer exist in this form.
+>
+> During the commerce extraction, `cart`, `orders` and `event_publication` moved to
+> **DeviceLK-Commerce**, which owns them in its own `devicelk_commerce` database with
+> its own `V1__baseline.sql`. This service's baseline was rewritten to contain the
+> `inventory` schema alone, and its database is now `devicelk_inventory`.
+>
+> **`V1__baseline.sql` was edited, against the rule stated at the bottom of this
+> file.** That rule protects databases where V1 has already been applied: editing it
+> there either fails checksum validation or silently describes a schema no live
+> database has. Neither applied — this baseline had only ever run on one developer
+> laptop and had never been pushed, so there was no deployed database whose history
+> it recorded. The alternative was keeping the original V1 and shipping a V2 that
+> DROPs the cart and orders schemas, which would mean every fresh inventory database
+> creating cart and order tables and then destroying them, and would leave the
+> baseline describing two modules this service does not contain.
+>
+> **The rule has resumed.** Both services' V1 files are frozen; changes ship as V2,
+> V3, ….
+>
+> **What is still valid below:** the Flyway *mechanism* — that a fresh empty database
+> gets V1 run against it, and a database that already carries the schema is adopted
+> in place with a baseline row and no data loss. That behaviour is unchanged, it is
+> what both services still rely on, and the runs recorded below are the evidence for
+> it. Only the schema contents described are out of date.
+>
+> One improvement came out of the split and is worth noting here: the `./init`
+> scripts no longer pre-create schemas, and the tests no longer seed them either.
+> Both used to make the database non-empty before Flyway ran, which flipped
+> `baseline-on-migrate` into *adopting* it — so V1 was skipped, Hibernate's
+> `ddl-auto` built the tables, and the baseline went untested on every run. Both
+> services now start from a genuinely empty database and let V1 build it, with
+> `ddl-auto: validate` asserting the result.
+
 Evidence that introducing Flyway (a) brings a brand-new empty Postgres up to the
 **exact** current schema, and (b) adopts the existing hand-built dev DB without
 re-running anything or losing data.

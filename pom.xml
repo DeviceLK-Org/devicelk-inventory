@@ -114,20 +114,16 @@
             <version>7.4</version>
         </dependency>
 
-        <!-- Spring Modulith: module boundary enforcement + event publication registry.
-             starter-jpa = starter-core + the JPA-backed event publication registry
-             (persists events to the event_publication table, replacing a hand-rolled outbox). -->
+        <!-- Spring Modulith: boundary enforcement only.
+             starter-jpa and events-api went to DeviceLK-Commerce with the order module.
+             They provided the JPA-backed event-publication registry, and this service
+             now publishes no application events — keeping them would create an
+             event_publication table nothing ever writes to, and imply an event-driven
+             path that does not exist here. starter-core is retained so ModularityTests
+             still runs, which is what would notice a second module quietly appearing. -->
         <dependency>
             <groupId>org.springframework.modulith</groupId>
             <artifactId>spring-modulith-starter-core</artifactId>
-        </dependency>
-        <dependency>
-            <groupId>org.springframework.modulith</groupId>
-            <artifactId>spring-modulith-starter-jpa</artifactId>
-        </dependency>
-        <dependency>
-            <groupId>org.springframework.modulith</groupId>
-            <artifactId>spring-modulith-events-api</artifactId>
         </dependency>
 
         <dependency>

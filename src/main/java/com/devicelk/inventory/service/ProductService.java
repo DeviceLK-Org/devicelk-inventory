@@ -98,7 +98,7 @@ public interface ProductService {
 
     /**
      * Reads a product in the cents-native form other modules consume through
-     * {@link com.devicelk.inventory.InventoryFacade}.
+     * the gRPC API that other services read the catalogue through.
      * <p>
      * Distinct from {@link #getProductById(Long)} in two ways that matter to a
      * caller storing the result. It carries {@code priceCents} verbatim instead

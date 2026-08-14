@@ -15,7 +15,7 @@ import org.springframework.modulith.core.ApplicationModules;
 class ModularityTests {
 
     static final ApplicationModules modules =
-            ApplicationModules.of(DeviceLkCommerceApplication.class);
+            ApplicationModules.of(DeviceLkInventoryApplication.class);
 
     @Test
     void verifiesModuleBoundaries() {

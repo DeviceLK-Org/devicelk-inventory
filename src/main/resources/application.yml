@@ -69,14 +69,6 @@ spring:
           issuer-uri: ${KEYCLOAK_ISSUER_URI:http://localhost:8180/realms/devicelk}
           jwk-set-uri: ${KEYCLOAK_JWK_SET_URI:http://localhost:8180/realms/devicelk/protocol/openid-connect/certs}
 
-  modulith:
-    # Modulith 1.1.x: re-publish incomplete event publications from the JPA registry
-    # on restart (default false; 'spring.modulith.events.completion-mode' only exists
-    # from Modulith 1.3). The registry's event_publication table is a plain JPA entity
-    # with the starter-jpa, so ddl-auto creates it — the JDBC-starter-only property
-    # 'spring.modulith.events.jdbc.schema-initialization.enabled' is not needed here.
-    republish-outstanding-events-on-restart: true
-
 eureka:
   client:
     service-url:

@@ -3,113 +3,60 @@ package com.devicelk;
 import org.springframework.boot.autoconfigure.condition.ConditionalOnWebApplication;
 import org.springframework.context.annotation.Bean;
 import org.springframework.context.annotation.Configuration;
-import org.springframework.core.annotation.Order;
-import org.springframework.security.config.Customizer;
 import org.springframework.security.config.annotation.web.builders.HttpSecurity;
 import org.springframework.security.config.annotation.web.configuration.EnableWebSecurity;
-import org.springframework.security.config.http.SessionCreationPolicy;
 import org.springframework.security.web.SecurityFilterChain;
 
 /**
- * HTTP security for the commerce monolith.
+ * HTTP security for the inventory service — or rather, the deliberate absence of
+ * it on this service's own port.
  * <p>
- * Lives in the application's root package rather than inside a module: it
- * governs every inbound request, so filing it under {@code cart} would both
- * misrepresent its scope and make Spring Modulith treat an application-wide
- * concern as one module's property. Keeping it beside
- * {@link DeviceLkCommerceApplication} also avoids inventing a {@code config}
- * package that Modulith would detect as a module of its own.
+ * <b>This class exists to keep endpoints open, not to close them.</b> That reads
+ * backwards, and the reason is worth stating plainly: Spring Security is on the
+ * classpath, and its mere presence authenticates every request and enables CSRF by
+ * default. Without the chain below, adding the dependency would silently return
+ * 401 to DeviceLK-AIRetrieval and 403 to the admin portal's writes — breakages
+ * with no code change behind them.
  * <p>
- * <b>Two chains, and the second one is not optional.</b> Putting Spring Security
- * on the classpath secures every endpoint by default and turns on CSRF — which
- * would have locked down the inventory REST API that the admin portal and the
- * AI retrieval service already use, and rejected their writes. The authenticated
- * chain therefore matches only the customer-facing paths, and a second,
- * lower-priority chain explicitly restores open access to everything else,
- * leaving those callers exactly as they were.
+ * <b>Why the authenticated chain went away.</b> While cart and order lived here,
+ * this class carried a second, higher-priority chain requiring a Keycloak JWT on
+ * {@code /api/v1/cart/**} and {@code /api/v1/orders/**}. Those endpoints moved to
+ * DeviceLK-Commerce, which took the chain with them — and, having no public
+ * surface of its own, inverted it into authenticated-by-default. Nothing this
+ * service exposes belongs to an individual user: a product and its stock level are
+ * the same facts for everyone who asks.
  * <p>
- * The authenticated chain covers cart <i>and</i> order paths together rather than
- * getting a chain each. They have identical requirements — same realm, same
- * stateless bearer-token handling, same reason CSRF does not apply — so a second
- * chain would be a copy that can drift, and the first time it drifted the
- * difference would be a gap in one of them.
+ * <b>What actually protects the write endpoints.</b> Not this service. The admin
+ * portal reaches {@code /inventory/**} through the API gateway, which validates
+ * the Keycloak token and enforces {@code ROLE_ADMIN} before proxying. This
+ * service's own port is expected to be unreachable from outside the cluster. That
+ * is a real assumption rather than a defence, and it is the reason locking these
+ * endpoints down is on the architecture-audit list — when that happens, this file
+ * and {@code OpenEndpointsRegressionTest} change in the same commit.
  * <p>
- * The gRPC service on its own port is unaffected: it is a separate Netty server,
- * not part of the servlet filter chain, and the gRPC starter only installs
- * authentication when a {@code GrpcAuthenticationReader} bean exists — there is
- * none here.
+ * The gRPC service on its own port is unaffected either way: it is a separate
+ * Netty server, not part of the servlet filter chain, and the gRPC starter only
+ * installs authentication when a {@code GrpcAuthenticationReader} bean exists —
+ * there is none here.
  * <p>
- * Conditional on a servlet web application because {@code securityMatcher} builds
- * an {@code MvcRequestMatcher}, which needs Spring MVC's
- * {@code HandlerMappingIntrospector} and therefore a servlet context. The
- * alternative — matching paths with {@code AntPathRequestMatcher} instead — would
- * make the config context-agnostic at the cost of using a different path-matching
- * algorithm from the one Spring MVC uses to dispatch, which is how request-matcher
- * bypasses happen. Keeping the MVC matcher and skipping the config where there is
- * no HTTP surface to protect is the safer half of that trade.
+ * Conditional on a servlet web application so the configuration is simply absent
+ * in tests that run with no HTTP surface to protect.
  */
 @Configuration
 @EnableWebSecurity
 @ConditionalOnWebApplication(type = ConditionalOnWebApplication.Type.SERVLET)
 public class SecurityConfig {
 
-    /** Path prefix for everything the cart module exposes. */
-    private static final String CART_PATHS = "/api/v1/cart/**";
-
     /**
-     * Path prefix for everything the order module exposes.
+     * Leaves every endpoint as open as it was before Spring Security was on the
+     * classpath.
      * <p>
-     * Note the trailing {@code /**} matches {@code /api/v1/orders} itself as well
-     * as its sub-paths under Spring's MVC matcher, so the collection endpoint is
-     * covered and not left open by a pattern that only caught {@code /orders/x}.
-     */
-    private static final String ORDER_PATHS = "/api/v1/orders/**";
-
-    /**
-     * Requires a valid Keycloak JWT on the cart and order endpoints.
-     * <p>
-     * Resource server, not login: this application never redirects anyone to
-     * Keycloak or holds a session. It takes a bearer token, checks the signature
-     * against the realm's JWKS and the {@code iss} claim against the configured
-     * issuer, and derives the user from it. A request without a usable token is
-     * rejected by the filter chain before any cart or order code runs — which is
-     * what makes the {@code subjectOf(Jwt)} guard in both controllers a check for
-     * misconfiguration rather than the thing holding attackers out.
-     * <p>
-     * Stateless and CSRF-free because the credential is a header the browser
-     * does not attach automatically. CSRF defends against the ambient authority
-     * of a cookie; a bearer token has none, and enabling it here would only
-     * break every non-browser client.
+     * CSRF is disabled for the same reason the chain exists at all: it defaults to
+     * on, and would start rejecting the admin portal's POST, PUT and DELETE calls
+     * to {@code /inventory/**} — requests that work today and are authenticated at
+     * the gateway, not here.
      */
     @Bean
-    @Order(1)
-    SecurityFilterChain authenticatedSecurityFilterChain(HttpSecurity http) throws Exception {
-        return http
-                .securityMatcher(CART_PATHS, ORDER_PATHS)
-                .authorizeHttpRequests(auth -> auth.anyRequest().authenticated())
-                .oauth2ResourceServer(oauth2 -> oauth2.jwt(Customizer.withDefaults()))
-                .sessionManagement(session ->
-                        session.sessionCreationPolicy(SessionCreationPolicy.STATELESS))
-                .csrf(csrf -> csrf.disable())
-                .build();
-    }
-
-    /**
-     * Leaves every other endpoint exactly as open as it was before security
-     * existed in this application.
-     * <p>
-     * This chain is a deliberate no-op, not an oversight. The inventory REST API,
-     * the actuator endpoints and the fallback routes were unauthenticated, and
-     * several live callers depend on that; tightening them is a decision to make
-     * on purpose, with those callers updated in the same change, rather than a
-     * side effect of the cart module gaining a login.
-     * <p>
-     * CSRF is disabled here for the same reason: it defaults to on with Spring
-     * Security present, and would start rejecting the admin portal's POST, PUT
-     * and DELETE calls to {@code /inventory/**} — requests that work today.
-     */
-    @Bean
-    @Order(2)
     SecurityFilterChain openEndpointsFilterChain(HttpSecurity http) throws Exception {
         return http
                 .securityMatcher("/**")

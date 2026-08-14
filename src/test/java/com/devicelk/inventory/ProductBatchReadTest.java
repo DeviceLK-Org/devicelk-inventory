@@ -21,8 +21,16 @@ import java.util.List;
 import static org.assertj.core.api.Assertions.assertThat;
 
 /**
- * Proves {@link InventoryFacade#getProducts(List)} does not degrade into an
- * N+1, by counting the statements Hibernate actually prepares.
+ * Proves {@link ProductService#getProductSnapshots(List)} does not degrade into
+ * an N+1, by counting the statements Hibernate actually prepares.
+ * <p>
+ * This assertion used to be made against {@code InventoryFacade}, the published
+ * API the cart and order modules read the catalogue through. That facade was
+ * deleted when those modules became DeviceLK-Commerce — it existed to serve other
+ * modules in this process, and there are none. The batched read itself did not
+ * move: it is still here, still the thing every catalogue lookup goes through, and
+ * now reached over gRPC instead of by method call. A remote caller is the one that
+ * can least afford an N+1, so this test matters more than it did, not less.
  * <p>
  * Asserting on a query count rather than on the returned data because the
  * returned data looks identical either way — a per-row lookup and a batched one
@@ -40,10 +48,7 @@ import static org.assertj.core.api.Assertions.assertThat;
                 "spring.jpa.properties.hibernate.generate_statistics=true"
         }
 )
-class InventoryFacadeBatchTest extends AbstractPostgresTest {
-
-    @Autowired
-    private InventoryFacade inventoryFacade;
+class ProductBatchReadTest extends AbstractPostgresTest {
 
     @Autowired
     private ProductService productService;
@@ -58,8 +63,9 @@ class InventoryFacadeBatchTest extends AbstractPostgresTest {
 
     @BeforeEach
     void reset() {
-        jdbcTemplate.execute("DELETE FROM cart.cart_items");
-        jdbcTemplate.execute("DELETE FROM cart.carts");
+        // Stock before products: the FK is ON DELETE CASCADE, but deleting the
+        // child first keeps the intent explicit rather than relying on it.
+        // No cart tables to clear — this database holds the inventory schema alone.
         jdbcTemplate.execute("DELETE FROM inventory.stock");
         jdbcTemplate.execute("DELETE FROM inventory.products");
 
@@ -78,7 +84,7 @@ class InventoryFacadeBatchTest extends AbstractPostgresTest {
                     new BigDecimal("1200.50"),
                     10 + i,
                     2,
-                    "Seeded by InventoryFacadeBatchTest")).id());
+                    "Seeded by ProductBatchReadTest")).id());
         }
         return ids;
     }
@@ -89,7 +95,7 @@ class InventoryFacadeBatchTest extends AbstractPostgresTest {
         List<Long> fewIds = seedProducts(2);
 
         statistics.clear();
-        List<ProductSnapshot> few = inventoryFacade.getProducts(fewIds);
+        List<ProductSnapshot> few = productService.getProductSnapshots(fewIds);
         long queriesForTwo = statistics.getPrepareStatementCount();
 
         assertThat(few).hasSize(2);
@@ -101,7 +107,7 @@ class InventoryFacadeBatchTest extends AbstractPostgresTest {
         manyIds.addAll(seedProducts(8));
 
         statistics.clear();
-        List<ProductSnapshot> many = inventoryFacade.getProducts(manyIds);
+        List<ProductSnapshot> many = productService.getProductSnapshots(manyIds);
         long queriesForTen = statistics.getPrepareStatementCount();
 
         assertThat(many).hasSize(10);
@@ -115,7 +121,7 @@ class InventoryFacadeBatchTest extends AbstractPostgresTest {
     void snapshotCarriesMoneyAndStock() {
         Long id = seedProducts(1).get(0);
 
-        ProductSnapshot snapshot = inventoryFacade.getProducts(List.of(id)).get(0);
+        ProductSnapshot snapshot = productService.getProductSnapshots(List.of(id)).get(0);
 
         assertThat(snapshot.productId()).isEqualTo(id);
         assertThat(snapshot.priceCents())
@@ -132,7 +138,7 @@ class InventoryFacadeBatchTest extends AbstractPostgresTest {
         List<Long> withGhost = new ArrayList<>(ids);
         withGhost.add(987654321L);
 
-        List<ProductSnapshot> found = inventoryFacade.getProducts(withGhost);
+        List<ProductSnapshot> found = productService.getProductSnapshots(withGhost);
 
         assertThat(found).hasSize(2);
         assertThat(found).extracting(ProductSnapshot::productId)
@@ -144,7 +150,7 @@ class InventoryFacadeBatchTest extends AbstractPostgresTest {
     void emptyRequestShortCircuits() {
         statistics.clear();
 
-        assertThat(inventoryFacade.getProducts(List.of())).isEmpty();
+        assertThat(productService.getProductSnapshots(List.of())).isEmpty();
         assertThat(statistics.getPrepareStatementCount()).isZero();
     }
 }
