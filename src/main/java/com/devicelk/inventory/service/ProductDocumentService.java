@@ -36,6 +36,20 @@ public interface ProductDocumentService {
     ProductResponseDTO uploadDocument(Long productId, String originalFilename, byte[] content);
 
     /**
+     * Removes a document from storage and clears any product reference to it.
+     * <p>
+     * <b>The knowledge base is not touched.</b> The document stays answerable by
+     * the AI until the next ingestion job notices the object is gone — the data
+     * source's deletion policy then drops it from the index. Callers must not
+     * present a delete as taking immediate effect.
+     *
+     * @param key the S3 object key to remove
+     * @throws com.devicelk.inventory.exception.InvalidDocumentException  blank or traversing key
+     * @throws com.devicelk.inventory.exception.DocumentStorageException  S3 refused or was unreachable
+     */
+    void deleteDocument(String key);
+
+    /**
      * Every known spec document: the <b>union</b> of what is in the bucket and
      * what the knowledge base has indexed.
      * <p>

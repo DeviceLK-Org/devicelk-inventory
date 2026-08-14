@@ -122,6 +122,33 @@ class ProductDocumentServiceImpl implements ProductDocumentService {
     }
 
     @Override
+    @Transactional
+    public void deleteDocument(String key) {
+        if (key == null || key.isBlank() || key.contains("..")) {
+            throw new InvalidDocumentException("The document key is not valid.");
+        }
+
+        try {
+            s3.deleteObject(DeleteObjectRequest.builder()
+                    .bucket(properties.bucket())
+                    .key(key)
+                    .build());
+        } catch (SdkException e) {
+            throw new DocumentStorageException("Could not delete the document from S3.", e);
+        }
+
+        // Legacy documents at the bucket root belong to no product, so an empty
+        // result here is normal rather than an inconsistency.
+        products.findByDocumentKey(key).ifPresent(product -> {
+            product.setDocumentKey(null);
+            products.save(product);
+        });
+
+        log.info("Deleted spec document {}. The knowledge base can still answer "
+                + "from it until the next ingestion job runs.", key);
+    }
+
+    @Override
     @Transactional(readOnly = true)
     public List<DocumentSummary> listDocuments() {
         Map<String, S3Object> inBucket = listBucketObjects();

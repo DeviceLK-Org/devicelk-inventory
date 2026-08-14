@@ -3,6 +3,7 @@ package com.devicelk.inventory.api;
 import com.devicelk.inventory.exception.InvalidDocumentException;
 import com.devicelk.inventory.service.ProductDocumentService;
 import org.springframework.http.ResponseEntity;
+import org.springframework.web.bind.annotation.DeleteMapping;
 import org.springframework.web.bind.annotation.GetMapping;
 import org.springframework.web.bind.annotation.PathVariable;
 import org.springframework.web.bind.annotation.PostMapping;
@@ -54,6 +55,23 @@ public class ProductDocumentController {
         }
         return ResponseEntity.ok(
                 documentService.uploadDocument(id, file.getOriginalFilename(), content));
+    }
+
+    /**
+     * Removes a spec document from storage.
+     * <p>
+     * The key travels as a <b>query parameter</b> rather than a path variable:
+     * keys contain {@code /} (e.g. {@code product-7/Specs.md}), which a path
+     * variable cannot carry without the double-encoding Spring rejects by
+     * default.
+     * <p>
+     * 204 means the object is gone from storage. It does <em>not</em> mean the
+     * AI has stopped answering from it — that happens on the next sync.
+     */
+    @DeleteMapping("/documents")
+    public ResponseEntity<Void> delete(@RequestParam("key") String key) {
+        documentService.deleteDocument(key);
+        return ResponseEntity.noContent().build();
     }
 
     /**
