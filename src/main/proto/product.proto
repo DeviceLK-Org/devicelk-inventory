@@ -6,11 +6,39 @@ option java_multiple_files = true;
 option java_package = "com.devicelk.grpc";
 option java_outer_classname = "ProductProto";
 
-// gRPC service that will be called by the AI Retrieval service
+// Inventory's gRPC surface, called by DeviceLK-AIRetrieval (reads) and
+// DeviceLK-Commerce (reads + the reservation lifecycle).
+//
+// THIS FILE IS DUPLICATED into DeviceLK-AIRetrieval and DeviceLK-Commerce, which
+// generate their client stubs from their own copy. There is no shared artifact,
+// so a change here reaches nobody until it is copied across and both sides are
+// rebuilt. Adding a field or an RPC is safe to roll out one side at a time;
+// renumbering or reusing a field number is not, and would silently misinterpret
+// data rather than fail.
 service ProductGrpcService {
   rpc GetProductStockAndPrice (InventoryRequest) returns (InventoryResponse);
   rpc GetBulkProductStockAndPrice (BulkInventoryRequest) returns (BulkInventoryResponse);
   rpc SearchProducts (ProductSearchRequest) returns (ProductSearchResponse);
+
+  // --- Reservation lifecycle -------------------------------------------------
+  // The write half of the API, and the reason it exists: stock is inventory's
+  // data, so no other service may move it directly. These three are the whole
+  // lifecycle — hold units, give them back, consume them.
+  //
+  // Each is ALL-OR-NOTHING across the lines in one request. A partially applied
+  // reservation is worse than a rejected one: it holds units for an order that
+  // will not exist, with nothing left holding the information needed to release
+  // them.
+  //
+  // WHAT CHANGED BY BEING REMOTE. When these ran in-process they joined the
+  // caller's transaction, so a checkout that failed afterwards rolled the
+  // reservation back for free. A ReserveStock that returns OK has now COMMITTED
+  // here, and no rollback in the calling service can reach it. That is what makes
+  // ReleaseStock load-bearing rather than a method kept for later — it is the
+  // compensating action a failed checkout must issue itself.
+  rpc ReserveStock (ReservationRequest) returns (ReservationResponse);
+  rpc ReleaseStock (ReservationRequest) returns (ReservationResponse);
+  rpc ConfirmReservation (ReservationRequest) returns (ReservationResponse);
 }
 
 // Request from AI service
@@ -49,4 +77,64 @@ message ProductSearchRequest {
 
 message ProductSearchResponse {
   repeated InventoryResponse products = 1;
+}
+
+// --- Reservation messages ----------------------------------------------------
+
+// One product, one quantity. The direction lives in the RPC name rather than in
+// a field here, so it is impossible to build a "release" line and hand it to
+// ReserveStock. Quantity must be > 0; zero or negative is INVALID_ARGUMENT, not
+// a no-op, because a negative reservation would INCREASE available stock while
+// claiming to hold units back — quietly manufacturing inventory.
+message ReservationLineMsg {
+  int64 product_id = 1;
+  int32 quantity = 2;
+}
+
+message ReservationRequest {
+  // Duplicate product ids are summed server-side, so a basket asking for 3 and
+  // then 4 of one product is checked as 7 against availability rather than twice
+  // as 3 and 4 — the latter would pass a basket that cannot be fulfilled.
+  // An empty list is a no-op that succeeds.
+  repeated ReservationLineMsg lines = 1;
+}
+
+// WHY INSUFFICIENT STOCK IS A RESPONSE FIELD AND NOT A gRPC ERROR STATUS.
+//
+// The two kinds of failure here are genuinely different and are signalled
+// differently on purpose:
+//
+//   * "Not enough stock" is an ORDINARY, EXPECTED outcome. The request was
+//     well-formed, the server worked correctly, and the answer is no. It carries
+//     data the caller needs to act on — which product, how many were wanted, how
+//     many exist — and stuffing that into a status message would mean the client
+//     parsing prose to recover it. A status code cannot carry it structurally
+//     without google.rpc error-details plumbing on both sides.
+//
+//   * A malformed line, an unreadable database, a bug — these are FAULTS, and
+//     they stay as gRPC status codes (INVALID_ARGUMENT, INTERNAL). A caller
+//     should not have to distinguish "the server refused" from "the server
+//     broke" by inspecting a payload.
+//
+// The InventoryFacade contract on the client side still THROWS
+// InsufficientStockException, because a reservation failure must abort a
+// checkout and a return value invites a caller to ignore it. That translation
+// happens in InventoryGrpcAdapter — the wire shape and the Java contract are
+// allowed to differ, and the adapter exists precisely to absorb that.
+message ReservationResponse {
+  bool success = 1;
+  // Set only when success = false. Populated for the FIRST line that could not
+  // be satisfied; the others are not evaluated, since nothing is applied either
+  // way and reporting them would imply a partial result that does not exist.
+  ReservationFailure failure = 2;
+}
+
+message ReservationFailure {
+  int64 product_id = 1;
+  int32 requested = 2;
+  // Units actually sellable at that moment. Zero also covers a product with no
+  // stock row at all, and a product that does not exist: in every one of those
+  // cases nothing is known to be sellable, and a missing record blocks a sale
+  // rather than waving one through.
+  int32 available = 3;
 }

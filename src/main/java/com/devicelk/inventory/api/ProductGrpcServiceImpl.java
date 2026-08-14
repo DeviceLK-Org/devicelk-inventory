@@ -1,10 +1,13 @@
 package com.devicelk.inventory.api;
 
+import com.devicelk.inventory.InsufficientStockException;
+import com.devicelk.inventory.ReservationLine;
 import com.devicelk.inventory.domain.Category;
 import com.devicelk.inventory.domain.Money;
 import com.devicelk.inventory.domain.Product;
 import com.devicelk.inventory.domain.Stock;
 import com.devicelk.inventory.repository.StockRepository;
+import com.devicelk.inventory.service.StockReservationService;
 import com.devicelk.grpc.BulkInventoryRequest;
 import com.devicelk.grpc.BulkInventoryResponse;
 import com.devicelk.grpc.InventoryRequest;
@@ -12,6 +15,9 @@ import com.devicelk.grpc.InventoryResponse;
 import com.devicelk.grpc.ProductGrpcServiceGrpc;
 import com.devicelk.grpc.ProductSearchRequest;
 import com.devicelk.grpc.ProductSearchResponse;
+import com.devicelk.grpc.ReservationFailure;
+import com.devicelk.grpc.ReservationRequest;
+import com.devicelk.grpc.ReservationResponse;
 import com.devicelk.inventory.repository.ProductRepository;
 import io.grpc.Status;
 import io.grpc.stub.StreamObserver;
@@ -21,11 +27,13 @@ import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 import org.springframework.data.domain.PageRequest;
 import org.springframework.data.domain.Sort;
+import org.springframework.orm.ObjectOptimisticLockingFailureException;
 
 import java.math.BigDecimal;
 import java.util.List;
 import java.util.Map;
 import java.util.Optional;
+import java.util.function.Consumer;
 import java.util.function.Function;
 import java.util.stream.Collectors;
 
@@ -52,6 +60,16 @@ class ProductGrpcServiceImpl extends ProductGrpcServiceGrpc.ProductGrpcServiceIm
     private final ProductRepository productRepository;
 
     private final StockRepository stockRepository;
+
+    /**
+     * The reservation lifecycle, reached through the module's own service rather
+     * than by touching {@link StockRepository} directly here. This class is a
+     * transport adapter; the invariants — all-or-nothing across lines, totals
+     * summed per product, rows touched in a fixed order to avoid deadlocks — live
+     * in the service, where they are shared with any other inbound adapter and
+     * cannot be forgotten by one of them.
+     */
+    private final StockReservationService stockReservationService;
 
 
     @Override
@@ -163,6 +181,133 @@ class ProductGrpcServiceImpl extends ProductGrpcServiceGrpc.ProductGrpcServiceIm
                     .withDescription("searchProducts failed: " + t)
                     .asRuntimeException());
         }
+    }
+
+    // --- Reservation lifecycle ---------------------------------------------------
+    //
+    // The write half of this service, and the seam that used to be a method call.
+    // DeviceLK-Commerce's checkout reached StockReservationService directly when it
+    // lived in this process; these three RPCs are the same three operations with a
+    // network between them, which is deliberately ALL that changed on this side.
+    //
+    // Each call is its own transaction — StockReservationServiceImpl's methods are
+    // @Transactional and there is no ambient transaction to join here. That is the
+    // whole difference in guarantee: a reservation that returns success has
+    // COMMITTED, and the caller's later failure cannot roll it back. Compensation
+    // is the caller's job now, via ReleaseStock.
+
+    @Override
+    public void reserveStock(ReservationRequest request,
+                             StreamObserver<ReservationResponse> responseObserver) {
+        applyMovement(request, responseObserver, stockReservationService::reserve, "reserveStock");
+    }
+
+    @Override
+    public void releaseStock(ReservationRequest request,
+                             StreamObserver<ReservationResponse> responseObserver) {
+        applyMovement(request, responseObserver, stockReservationService::release, "releaseStock");
+    }
+
+    @Override
+    public void confirmReservation(ReservationRequest request,
+                                   StreamObserver<ReservationResponse> responseObserver) {
+        applyMovement(request, responseObserver, stockReservationService::confirm, "confirmReservation");
+    }
+
+    /**
+     * Shared body of the three reservation RPCs: they differ only in which way
+     * units move, which is already expressed by the method reference passed in.
+     * <p>
+     * <b>The failure mapping is the substance of this method</b>, because each
+     * kind of failure tells the caller to do something different:
+     * <ul>
+     *   <li><b>Insufficient stock → a successful RPC with {@code success=false}.</b>
+     *       The request was well-formed and the server worked correctly; the answer
+     *       is simply no. It carries structured data the caller acts on, so it is a
+     *       payload rather than a status. See the proto for the full reasoning.</li>
+     *   <li><b>A malformed line → {@code INVALID_ARGUMENT}.</b> Raised by
+     *       {@link ReservationLine}'s constructor before anything is attempted, so a
+     *       non-positive quantity cannot reach the service and quietly
+     *       <i>increase</i> available stock while claiming to hold units back.</li>
+     *   <li><b>Releasing or confirming more units than are held →
+     *       {@code FAILED_PRECONDITION}.</b> A caller bug, not a shortage: units
+     *       cannot have been held against a row that does not exist, and reporting
+     *       it as a shortage would send the caller looking for a restock that
+     *       cannot help.</li>
+     *   <li><b>An optimistic-lock collision → {@code ABORTED}.</b> Two checkouts
+     *       raced for the same stock row and this one lost. ABORTED is the status
+     *       gRPC defines as retryable-at-a-higher-level, which is exactly right:
+     *       nothing is wrong with the request and repeating it may well succeed.
+     *       Reporting it as INTERNAL — as a naive catch-all would — tells the caller
+     *       the server is broken and to stop trying.</li>
+     * </ul>
+     */
+    private void applyMovement(ReservationRequest request,
+                               StreamObserver<ReservationResponse> responseObserver,
+                               Consumer<List<ReservationLine>> movement,
+                               String rpcName) {
+        List<ReservationLine> lines;
+        try {
+            lines = toReservationLines(request);
+        } catch (IllegalArgumentException e) {
+            log.warn("{} rejected a malformed request: {}", rpcName, e.getMessage());
+            responseObserver.onError(Status.INVALID_ARGUMENT
+                    .withDescription(e.getMessage())
+                    .asRuntimeException());
+            return;
+        }
+
+        try {
+            movement.accept(lines);
+            responseObserver.onNext(ReservationResponse.newBuilder().setSuccess(true).build());
+            responseObserver.onCompleted();
+            log.debug("{} applied {} line(s)", rpcName, lines.size());
+        } catch (InsufficientStockException e) {
+            log.info("{} refused: product {} requested {}, available {}",
+                    rpcName, e.getProductId(), e.getRequested(), e.getAvailable());
+            responseObserver.onNext(ReservationResponse.newBuilder()
+                    .setSuccess(false)
+                    .setFailure(ReservationFailure.newBuilder()
+                            .setProductId(e.getProductId())
+                            .setRequested(e.getRequested())
+                            .setAvailable(e.getAvailable())
+                            .build())
+                    .build());
+            responseObserver.onCompleted();
+        } catch (ObjectOptimisticLockingFailureException e) {
+            log.warn("{} lost an optimistic-lock race on {} line(s)", rpcName, lines.size());
+            responseObserver.onError(Status.ABORTED
+                    .withDescription("Concurrent stock update; retry the operation.")
+                    .asRuntimeException());
+        } catch (IllegalStateException e) {
+            log.warn("{} rejected: {}", rpcName, e.getMessage());
+            responseObserver.onError(Status.FAILED_PRECONDITION
+                    .withDescription(e.getMessage())
+                    .asRuntimeException());
+        } catch (Throwable t) {
+            // Throwable, not Exception: linkage errors from stale generated stubs
+            // must surface here too, matching the read RPCs above.
+            log.error("{} failed for {} line(s)", rpcName, lines.size(), t);
+            responseObserver.onError(Status.INTERNAL
+                    .withDescription(rpcName + " failed: " + t)
+                    .asRuntimeException());
+        }
+    }
+
+    /**
+     * Converts the wire lines into the domain's value type.
+     * <p>
+     * {@link ReservationLine}'s constructor is what validates quantity, so this
+     * method deliberately adds no checks of its own — a second copy of that rule
+     * here would be one to drift out of step with the one that actually protects
+     * the stock table.
+     *
+     * @throws IllegalArgumentException if any line has a non-positive quantity
+     */
+    private static List<ReservationLine> toReservationLines(ReservationRequest request) {
+        return request.getLinesList().stream()
+                .map(line -> new ReservationLine(line.getProductId(), line.getQuantity()))
+                .toList();
     }
 
     /**

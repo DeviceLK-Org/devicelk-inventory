@@ -20,6 +20,22 @@
              first Flyway line that recognises PostgreSQL 16 (our dev + prod engine) and
              is pure Java, so it runs unchanged on the ARM Postgres target (Oracle k3s). -->
         <flyway.version>9.22.3</flyway.version>
+        <!-- THE gRPC VERSION, single-sourced.
+
+             This project used to name 1.62.2 on grpc-protobuf and grpc-stub while
+             net.devh's 3.1.0.RELEASE starter brought grpc-api/grpc-core 1.63.0 in
+             transitively. That mismatch compiles cleanly and mostly works, which is
+             precisely what makes it dangerous: the failure is a runtime
+             NoSuchMethodError on CallOptions.getOnReadyThreshold that kills the
+             channel, and it appears only when a caller exercises the path that
+             touches the changed API. DeviceLK-AIRetrieval hit exactly that and fixed
+             it with the bom import below; this is the same fix applied to the server
+             side, and it matters more now that DeviceLK-Commerce is a second client
+             whose checkout depends on this channel staying up.
+
+             Keep this in step with DeviceLK-Commerce's grpc.version. -->
+        <grpc.version>1.63.0</grpc.version>
+        <protobuf.version>3.25.3</protobuf.version>
     </properties>
 
     <parent>
@@ -161,16 +177,15 @@
             <version>3.1.0.RELEASE</version>
         </dependency>
 
-        <!-- Protobuf core dependencies -->
+        <!-- Protobuf core dependencies. Versions come from grpc-bom below, on
+             purpose — see the grpc.version property comment. -->
         <dependency>
             <groupId>io.grpc</groupId>
             <artifactId>grpc-protobuf</artifactId>
-            <version>1.62.2</version>
         </dependency>
         <dependency>
             <groupId>io.grpc</groupId>
             <artifactId>grpc-stub</artifactId>
-            <version>1.62.2</version>
         </dependency>
         <dependency>
             <groupId>javax.annotation</groupId>
@@ -202,6 +217,16 @@
                 <type>pom</type>
                 <scope>import</scope>
             </dependency>
+            <!-- Aligns every io.grpc artifact — including the ones net.devh pulls in
+                 transitively — onto ${grpc.version}. This is the fix, not the pinning
+                 of individual artifacts. -->
+            <dependency>
+                <groupId>io.grpc</groupId>
+                <artifactId>grpc-bom</artifactId>
+                <version>${grpc.version}</version>
+                <type>pom</type>
+                <scope>import</scope>
+            </dependency>
         </dependencies>
     </dependencyManagement>
 
@@ -218,9 +243,13 @@
                 <artifactId>protobuf-maven-plugin</artifactId>
                 <version>0.6.1</version>
                 <configuration>
-                    <protocArtifact>com.google.protobuf:protoc:3.25.3:exe:${os.detected.classifier}</protocArtifact>
+                    <protocArtifact>com.google.protobuf:protoc:${protobuf.version}:exe:${os.detected.classifier}</protocArtifact>
                     <pluginId>grpc-java</pluginId>
-                    <pluginArtifact>io.grpc:protoc-gen-grpc-java:1.62.2:exe:${os.detected.classifier}</pluginArtifact>
+                    <!-- Tied to ${grpc.version} so the generated stubs match the runtime
+                         that executes them, and so DeviceLK-Commerce — which generates
+                         its client stubs from a copy of this same .proto at the same
+                         version — produces wire-compatible code. -->
+                    <pluginArtifact>io.grpc:protoc-gen-grpc-java:${grpc.version}:exe:${os.detected.classifier}</pluginArtifact>
                 </configuration>
                 <executions>
                     <execution>
