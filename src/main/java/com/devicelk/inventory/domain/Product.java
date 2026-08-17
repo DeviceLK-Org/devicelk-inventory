@@ -9,16 +9,11 @@ import org.hibernate.annotations.JdbcTypeCode;
 import org.hibernate.type.SqlTypes;
 
 /**
- * JPA entity representing a single product held in the DeviceLK inventory.
+ * A single product in the DeviceLK inventory, mapped to {@code inventory.products}.
  * <p>
- * This is the <b>Domain/Model</b> layer. The class is mapped to the
- * {@code products} table; Hibernate generates the schema automatically
- * (see {@code spring.jpa.hibernate.ddl-auto}).
- * <p>
- * Holds catalogue facts only. On-hand quantities live on {@code Stock}
- * ({@code inventory.stock}, keyed by product id) so that stock movements — a
- * high-churn, separately-versioned concern — never contend with edits to the
- * product record itself.
+ * Holds catalogue facts only. On-hand quantities live on {@link Stock}, keyed by
+ * product id, so high-churn stock movements never contend with edits to the
+ * product record.
  */
 @Entity
 @Table(
@@ -59,33 +54,27 @@ public class Product {
     private Category category;
 
     /**
-     * Price in minor units (cents), never a decimal type: integer arithmetic
-     * removes any chance of a floating-point rounding artefact reaching a
-     * customer-visible total. Rendered for transport via
-     * {@link Money#toDisplayString(long)} — the single conversion point.
+     * Price in minor units, never a decimal type, so no floating-point rounding
+     * artefact can reach a customer-visible total. Rendered for transport via
+     * {@link Money#toDisplayString(long)}.
      * <p>
-     * Declared {@code long} rather than {@code Long} so the column can never be
-     * left null; {@code @Positive} rejects both a missing value (which binds to
-     * 0) and an explicit non-positive one.
+     * Primitive {@code long} so the column can never be null; {@code @Positive}
+     * rejects both a missing value (which binds to 0) and an explicit bad one.
      */
     @Positive(message = "Price must be greater than zero")
     @Column(name = "price_cents", nullable = false)
     private long priceCents;
 
     /**
-     * ISO-4217 code for {@link #priceCents}. Single-currency today, but the
-     * amount is meaningless without it, so the unit travels with the number
-     * rather than being assumed by each reader.
+     * ISO-4217 code for {@link #priceCents}. Single-currency today, but the unit
+     * travels with the number rather than being assumed by each reader.
      */
     @NotBlank(message = "Currency is required")
     @Size(min = 3, max = 3, message = "Currency must be a 3-letter ISO-4217 code")
     @Column(nullable = false, length = 3, columnDefinition = "char(3)")
-    // CHAR, not the VARCHAR Hibernate assumes for a String. Without this, the
-    // columnDefinition above builds a bpchar column that schema validation then
-    // rejects as the wrong type — DDL generation reads columnDefinition, while
-    // validation compares against the mapped JDBC type, and the two disagreed.
-    // Declaring the type here makes them agree on the fixed-width column that was
-    // intended: an ISO-4217 code is always exactly three characters.
+    // CHAR, not the VARCHAR Hibernate assumes for String. Without this, DDL
+    // generation builds a bpchar column from columnDefinition while schema
+    // validation checks the mapped JDBC type, and the two disagree.
     @JdbcTypeCode(SqlTypes.CHAR)
     private String currency = DEFAULT_CURRENCY;
 
@@ -94,16 +83,13 @@ public class Product {
     private String description;
 
     /**
-     * S3 object key of this product's spec document, or {@code null} when none
-     * has been uploaded.
+     * S3 object key of this product's spec document, or {@code null} if none.
      * <p>
-     * The bucket is deliberately absent: it is configuration, not data. Holding a
-     * key alone means changing buckets stays a config change rather than becoming
-     * a data migration across every row.
+     * The bucket is deliberately not stored: it is configuration, so changing
+     * buckets stays a config change rather than a data migration.
      * <p>
-     * A non-null value says the document exists in storage. It says nothing about
-     * whether the knowledge base has indexed it — that is answered by comparing
-     * against the knowledge base, never by this column.
+     * A non-null value means the document exists in storage. It says nothing
+     * about whether the knowledge base has indexed it.
      */
     @Size(max = 512)
     @Column(name = "document_key", length = 512)

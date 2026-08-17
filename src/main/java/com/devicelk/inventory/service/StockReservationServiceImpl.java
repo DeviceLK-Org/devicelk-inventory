@@ -19,27 +19,19 @@ import java.util.function.ObjIntConsumer;
 import java.util.stream.Collectors;
 
 /**
- * Default {@link StockReservationService}.
+ * Default {@link StockReservationService}. Package-private; callers bind to the
+ * interface.
  * <p>
- * Package-private: callers bind to the interface, and only this package sees the
- * implementation.
+ * Propagation is the default {@code REQUIRED}. The only inbound caller is
+ * {@code ProductGrpcServiceImpl}, which has no ambient transaction, so each
+ * operation commits on its own — remote callers must compensate with
+ * {@link #release(List)} rather than relying on a rollback.
  * <p>
- * <b>Propagation is deliberately the default {@code REQUIRED}, never
- * {@code REQUIRES_NEW}.</b> Checkout calls this from inside its own transaction
- * and needs the reservation to commit or roll back <i>with</i> the order it is
- * reserving for. A new transaction here would commit the stock movement
- * independently, so an order that failed to persist a moment later would leave
- * units held for an order that does not exist — invisible, unreleasable, and
- * gone from the shelf until someone reconciles by hand. Joining the caller's
- * transaction is what makes the atomicity guarantee real rather than aspirational.
- * <p>
- * <b>Concurrency.</b> Two checkouts racing for the last units are settled by the
- * {@code @Version} column on {@link Stock}: both may read the same availability
- * and believe they can proceed, but only one {@code UPDATE} will match the
- * version it read, and the loser fails at flush with an optimistic-lock failure
- * that rolls its whole checkout back. That surfaces as a 500 rather than the 409
- * a rejected reservation gets, which is worth revisiting if contention ever
- * becomes routine — the honest fix is a retry, not a lock upgrade.
+ * Two checkouts racing for the last units are settled by the {@code @Version}
+ * column on {@link Stock}: only one {@code UPDATE} matches the version it read,
+ * and the loser fails at flush with an optimistic-lock failure. That surfaces as
+ * ABORTED to the caller; if contention becomes routine the fix is a retry, not a
+ * lock upgrade.
  */
 @Service
 class StockReservationServiceImpl implements StockReservationService {
@@ -61,20 +53,16 @@ class StockReservationServiceImpl implements StockReservationService {
         }
         Map<Long, Stock> stockByProductId = loadStock(wanted.keySet());
 
-        // Two passes, on purpose. Checking every line before moving any unit means
-        // an unsatisfiable basket leaves the persistence context untouched, rather
-        // than relying on rollback to undo mutations that were already applied.
-        // Rollback would in fact cover it — but "nothing was ever changed" is a
-        // property that holds no matter how a future caller handles the exception,
-        // and that is a materially stronger thing to be able to state.
+        // Two passes: check every line before moving any unit, so an unsatisfiable
+        // basket leaves the persistence context untouched rather than relying on
+        // rollback to undo mutations already applied.
         for (Map.Entry<Long, Integer> line : wanted.entrySet()) {
             Long productId = line.getKey();
             int quantity = line.getValue();
             Stock stock = stockByProductId.get(productId);
             if (stock == null) {
-                // No stock row — or no such product. Nothing is known to be
-                // sellable, which is the same reading getProductSnapshot takes:
-                // a missing record blocks a sale rather than waving one through.
+                // No stock row, or no such product: nothing is known to be sellable,
+                // so a missing record blocks the sale rather than waving it through.
                 log.warn("Reservation rejected: no stock row for product {} (requested {})",
                         productId, quantity);
                 throw new InsufficientStockException(productId, quantity, 0);
@@ -104,15 +92,13 @@ class StockReservationServiceImpl implements StockReservationService {
     }
 
     /**
-     * Shared body of {@link #release(List)} and {@link #confirm(List)}: both walk
+     * Shared body of {@link #release(List)} and {@link #confirm(List)}; both walk
      * already-reserved units and differ only in which way they move them.
      * <p>
-     * Neither can fail on availability the way {@link #reserve(List)} can — the
-     * units are already held — so the only error is a caller asking for more than
-     * it holds, which {@link Stock} rejects. That check lives on the entity, so
-     * this method does not repeat it; the entity is the thing that knows the
-     * current reserved count, and duplicating the guard here would be a second
-     * copy to drift out of step.
+     * Neither can fail on availability the way {@link #reserve(List)} can, since
+     * the units are already held. The only error is asking for more than is held,
+     * which {@link Stock} rejects — not repeated here, because the entity is what
+     * knows the current reserved count.
      */
     private void applyToHeldUnits(List<ReservationLine> lines,
                                   ObjIntConsumer<Stock> movement,
@@ -126,9 +112,8 @@ class StockReservationServiceImpl implements StockReservationService {
         wanted.forEach((productId, quantity) -> {
             Stock stock = stockByProductId.get(productId);
             if (stock == null) {
-                // Distinct from the reserve case: units cannot have been held
-                // against a row that does not exist, so this is a caller bug
-                // rather than a shortage, and a shortage exception would send
+                // A caller bug, not a shortage: units cannot have been held against
+                // a row that does not exist, and a shortage exception would send
                 // the caller looking for a restock that will not help.
                 throw new IllegalStateException(
                         "Cannot " + action + " " + quantity + " units of product "
@@ -139,19 +124,15 @@ class StockReservationServiceImpl implements StockReservationService {
     }
 
     /**
-     * Collapses the caller's lines into one total per product.
-     * <p>
-     * Two things fall out of this, both of which matter. Duplicate lines for the
-     * same product are summed, so a basket asking for 3 and then 4 is checked as
-     * 7 against availability rather than twice as 3 and 4 — the latter would let
-     * a basket pass that cannot actually be fulfilled, and would report the wrong
-     * figure when it failed.
-     * <p>
-     * And the result is sorted by product id, which fixes the order in which rows
-     * are touched and therefore the order locks are taken at flush. Two checkouts
-     * for overlapping products that walked their lines in caller-supplied order
-     * could each hold what the other needs next; sorting means they contend for
-     * the same row first and one simply waits.
+     * Collapses the caller's lines into one total per product, which does two
+     * things:
+     * <ul>
+     *   <li>Duplicate lines are summed, so 3 then 4 is checked as 7 rather than
+     *       twice separately, which would pass a basket that cannot be fulfilled.</li>
+     *   <li>Sorting by product id fixes the order rows are touched, and therefore
+     *       the order locks are taken at flush, so two overlapping checkouts
+     *       contend on the same row first instead of deadlocking.</li>
+     * </ul>
      */
     private static SortedMap<Long, Integer> totalsByProduct(List<ReservationLine> lines) {
         return lines.stream().collect(Collectors.toMap(
@@ -164,11 +145,9 @@ class StockReservationServiceImpl implements StockReservationService {
     /**
      * Loads every stock row the operation touches in one query.
      * <p>
-     * Fixed cost in the number of distinct products, rather than a lookup per
-     * line. The returned entities are managed, so the mutations applied to them
-     * are written by dirty checking at flush — there is no {@code save} call
-     * here, and adding one would suggest it is what persists the change when it
-     * would in fact be a no-op.
+     * The returned entities are managed, so mutations are written by dirty
+     * checking at flush — there is deliberately no {@code save} call, which would
+     * be a no-op that looks like the thing persisting the change.
      */
     private Map<Long, Stock> loadStock(Collection<Long> productIds) {
         return stockRepository.findByProductIdIn(List.copyOf(productIds)).stream()

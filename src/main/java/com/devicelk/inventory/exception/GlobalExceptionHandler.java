@@ -35,9 +35,8 @@ public class GlobalExceptionHandler {
     /**
      * Maps a product whose stock row is absent to HTTP 404 Not Found.
      * <p>
-     * Same status as {@link ProductNotFoundException} — the requested resource
-     * genuinely is not there, and holding the status steady keeps the existing
-     * client contract — but with a message that names the real problem.
+     * Same status as {@link ProductNotFoundException}, since the resource really
+     * is not there, but with a message naming the actual problem.
      */
     @ExceptionHandler(StockNotFoundException.class)
     public ResponseEntity<Map<String, Object>> handleStockNotFound(StockNotFoundException ex) {
@@ -52,9 +51,8 @@ public class GlobalExceptionHandler {
     /**
      * Maps a lost optimistic-lock race on {@code Stock} to HTTP 409 Conflict.
      * <p>
-     * Two concurrent adjustments to the same product make the second one fail
-     * its version check. That is a retryable conflict, not a server fault, so it
-     * must not surface as a 500 — the caller can simply re-read and re-apply.
+     * The second of two concurrent adjustments fails its version check. That is a
+     * retryable conflict, not a server fault, so it must not surface as a 500.
      */
     @ExceptionHandler(ObjectOptimisticLockingFailureException.class)
     public ResponseEntity<String> handleConcurrentModification(ObjectOptimisticLockingFailureException ex) {
@@ -83,10 +81,9 @@ public class GlobalExceptionHandler {
     /**
      * Maps a rejected spec document to HTTP 400 Bad Request.
      * <p>
-     * This is precisely why {@link InvalidDocumentException} exists as its own
-     * type rather than reusing {@code IllegalArgumentException}: the handler
-     * directly above maps that to 409, and a bad filename is a validation
-     * failure, not a conflict.
+     * Why {@link InvalidDocumentException} is its own type rather than an
+     * {@code IllegalArgumentException}: the handler above maps that to 409, and a
+     * bad filename is a validation failure, not a conflict.
      */
     @ExceptionHandler(InvalidDocumentException.class)
     public ResponseEntity<String> handleInvalidDocument(InvalidDocumentException ex) {
@@ -109,9 +106,8 @@ public class GlobalExceptionHandler {
     /**
      * Maps "a sync is already running" to HTTP 409 Conflict.
      * <p>
-     * Genuinely a conflict rather than a failure: Bedrock allows one ingestion
-     * job per data source, and the job already in flight will pick up whatever
-     * is waiting. The portal reports this as information.
+     * A conflict rather than a failure: Bedrock allows one ingestion job per data
+     * source, and the job in flight will pick up whatever is waiting.
      */
     @ExceptionHandler(SyncInProgressException.class)
     public ResponseEntity<String> handleSyncInProgress(SyncInProgressException ex) {
@@ -121,9 +117,8 @@ public class GlobalExceptionHandler {
     /**
      * Maps an AWS failure to HTTP 502 Bad Gateway.
      * <p>
-     * 502 rather than 500 on purpose: the fault is in a service this one calls
-     * out to — typically IAM or credentials — not in this service's own logic,
-     * and the status is what tells the reader where to look.
+     * 502, not 500: the fault is in a service this one calls out to (typically
+     * IAM or credentials), not in this service's own logic.
      */
     @ExceptionHandler(DocumentStorageException.class)
     public ResponseEntity<String> handleStorageFailure(DocumentStorageException ex) {

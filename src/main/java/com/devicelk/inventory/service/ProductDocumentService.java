@@ -14,10 +14,9 @@ import java.util.List;
  * servlet API stays in the controller and this contract can be exercised
  * without any web scaffolding.
  * <p>
- * <b>Storing a document does not make it answerable.</b> The knowledge base only
- * picks up changes when an ingestion job runs, so an upload leaves the file
- * visible to this service and invisible to the AI until a sync happens. That gap
- * is deliberate and surfaced to admins rather than hidden.
+ * Storing a document does not make it answerable: the knowledge base only picks
+ * up changes when an ingestion job runs, so an upload stays invisible to the AI
+ * until a sync happens. That gap is surfaced to admins rather than hidden.
  */
 public interface ProductDocumentService {
 
@@ -38,10 +37,9 @@ public interface ProductDocumentService {
     /**
      * Removes a document from storage and clears any product reference to it.
      * <p>
-     * <b>The knowledge base is not touched.</b> The document stays answerable by
-     * the AI until the next ingestion job notices the object is gone — the data
-     * source's deletion policy then drops it from the index. Callers must not
-     * present a delete as taking immediate effect.
+     * The knowledge base is not touched, so the document stays answerable until
+     * the next ingestion job notices the object is gone. Callers must not present
+     * a delete as taking immediate effect.
      *
      * @param key the S3 object key to remove
      * @throws com.devicelk.inventory.exception.InvalidDocumentException  blank or traversing key
@@ -50,13 +48,11 @@ public interface ProductDocumentService {
     void deleteDocument(String key);
 
     /**
-     * Every known spec document: the <b>union</b> of what is in the bucket and
-     * what the knowledge base has indexed.
-     * <p>
-     * The union is the point. A document deleted from S3 but still indexed would
-     * be invisible to a bucket-only listing while the AI kept answering from it,
-     * so each row carries a {@link com.devicelk.inventory.api.DocumentState}
-     * saying whether the AI can currently see it.
+     * Every known spec document: the union of what is in the bucket and what the
+     * knowledge base has indexed. A document deleted from S3 but still indexed
+     * would be invisible to a bucket-only listing while the AI kept answering
+     * from it, so each row carries a
+     * {@link com.devicelk.inventory.api.DocumentState}.
      *
      * @throws com.devicelk.inventory.exception.DocumentStorageException S3 or Bedrock was unreachable
      */
@@ -65,10 +61,9 @@ public interface ProductDocumentService {
     /**
      * Starts an ingestion job so the knowledge base catches up with the bucket.
      * <p>
-     * Acts on the whole data source, not one document: it picks up every new
-     * file and drops every deleted one in a single pass. Returns as soon as the
-     * job is accepted, not when it finishes — poll {@link #getSyncStatus} for
-     * that.
+     * Acts on the whole data source, picking up every new file and dropping every
+     * deleted one in one pass. Returns when the job is accepted, not when it
+     * finishes — poll {@link #getSyncStatus} for that.
      *
      * @throws com.devicelk.inventory.exception.SyncInProgressException a job is already running
      * @throws com.devicelk.inventory.exception.DocumentStorageException Bedrock refused or was unreachable

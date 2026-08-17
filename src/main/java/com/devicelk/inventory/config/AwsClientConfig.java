@@ -12,18 +12,15 @@ import software.amazon.awssdk.services.s3.S3Client;
  * AWS clients backing the product spec-document feature.
  * <p>
  * Neither builder names a credentials provider, so the SDK default chain applies
- * — environment variables in dev, an instance role in a deployed environment.
- * That is the whole reason no secret appears in this service's configuration.
+ * — environment variables in dev, an instance role when deployed. That is why no
+ * secret appears in this service's configuration.
  * <p>
- * Both clients are synchronous. Uploads are small (kilobytes) and the ingestion
- * calls return as soon as the job is <em>accepted</em> rather than finished, so
- * nothing here blocks long enough to justify the async variants.
+ * Both clients are synchronous: uploads are kilobytes, and ingestion calls return
+ * once the job is accepted rather than finished.
  * <p>
- * Both also name {@link UrlConnectionHttpClient} explicitly rather than letting
- * the SDK pick its default. The default is Apache HttpClient 5, and this SDK
- * version needs a newer httpclient5 than Spring Boot manages — see the exclusion
- * comment in {@code pom.xml}. Naming the transport here keeps that decision
- * visible at the point where the clients are actually built.
+ * Both name {@link UrlConnectionHttpClient} explicitly because the SDK default is
+ * Apache HttpClient 5, and this SDK version needs a newer httpclient5 than Spring
+ * Boot manages — see the exclusion in {@code pom.xml}.
  */
 @Configuration
 @EnableConfigurationProperties(DocumentProperties.class)
@@ -39,11 +36,9 @@ public class AwsClientConfig {
     }
 
     /**
-     * Bedrock <b>control</b> plane — ingestion jobs and document listing.
-     * <p>
-     * Not to be confused with {@code BedrockAgentRuntimeClient}, which is what
-     * DeviceLK-AIRetrieval uses to run queries. The runtime client cannot start
-     * an ingestion job, and this one cannot answer a question.
+     * Bedrock control plane — ingestion jobs and document listing. Distinct from
+     * the {@code BedrockAgentRuntimeClient} DeviceLK-AIRetrieval uses for
+     * queries: neither client can do the other's job.
      */
     @Bean
     BedrockAgentClient bedrockAgentClient(DocumentProperties properties) {

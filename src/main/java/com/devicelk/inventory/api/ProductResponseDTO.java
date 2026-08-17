@@ -6,14 +6,10 @@ import com.devicelk.inventory.domain.Product;
 import java.math.BigDecimal;
 
 /**
- * Immutable data transfer object used to return product data to API clients.
+ * Product data as returned to API clients.
  * <p>
- * Implemented as a Java {@code record}: it is immutable, generates the
- * constructor, accessors, {@code equals}/{@code hashCode}/{@code toString}
- * automatically, and decouples the public API contract from the internal
- * {@link Product} JPA entity. Exposing a
- * DTO instead of the entity prevents accidental leakage of persistence
- * details and lazy-loading issues.
+ * A DTO rather than the {@link Product} entity, so persistence details and
+ * lazy-loading never leak into the public API contract.
  */
 public record ProductResponseDTO(
         Long id,

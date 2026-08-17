@@ -247,6 +247,7 @@
             <artifactId>url-connection-client</artifactId>
         </dependency>
 
+        
     </dependencies>
 
     <dependencyManagement>

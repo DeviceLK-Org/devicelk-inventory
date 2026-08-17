@@ -7,22 +7,20 @@ import org.springframework.stereotype.Repository;
 import java.util.List;
 
 /**
- * <b>Repository</b> layer for {@link Stock}.
+ * Repository for {@link Stock}, keyed by product id — {@code findById(productId)}
+ * for one row, {@code findByProductIdIn} for many.
  * <p>
- * Keyed by product id, so {@code findById(productId)} is the single-row lookup
- * and {@code findByProductIdIn} the bulk one. Read paths that need a product
- * <em>and</em> its quantities should not combine the two repositories per row —
- * they join, so a page of products costs one query rather than one per product.
+ * Read paths needing products <em>and</em> quantities should batch rather than
+ * pairing the two repositories per row, so a page costs one query each.
  */
 @Repository
 public interface StockRepository extends JpaRepository<Stock, Long> {
 
     /**
-     * Bulk fetch: returns the stock rows for every id in the given list.
+     * Bulk fetch of stock rows.
      * <p>
-     * Products created before their stock row exists are simply absent from the
-     * result, so callers must tolerate a missing entry rather than assume the
-     * result is the same size as the input.
+     * A product without a stock row is simply absent, so callers must tolerate a
+     * result shorter than the input.
      *
      * @param productIds the product identifiers to look up
      * @return the matching stock rows (empty list if none match)

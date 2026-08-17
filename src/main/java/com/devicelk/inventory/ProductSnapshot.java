@@ -4,24 +4,17 @@ package com.devicelk.inventory;
  * Point-in-time view of a product, published by {@link InventoryFacade} for
  * other modules to consume.
  * <p>
- * Deliberately narrow: it carries only the facts a downstream module needs to
- * make a decision — does the product exist, can it be sold in the requested
- * quantity, and what does it cost right now. Catalogue detail (brand, category,
- * description) stays inside the inventory module.
+ * Deliberately narrow: only the facts a downstream module needs to decide — does
+ * the product exist, can it be sold in the quantity wanted, what does it cost.
+ * Catalogue detail (brand, category, description) stays inside this module.
  * <p>
- * The price is in <b>minor units</b>, matching {@code Product.priceCents}, so a
- * caller that snapshots it (the cart, at add-to-cart time) stores the exact
- * integer inventory holds rather than a decimal reconstructed from a display
- * string. Rendering that number for a human is the caller's concern.
+ * The price is in minor units, matching {@code Product.priceCents}, so a caller
+ * that snapshots it stores inventory's exact integer rather than a decimal
+ * reconstructed from a display string. {@code currency} travels with it because
+ * the number is meaningless alone.
  * <p>
- * {@code currency} travels with {@code priceCents} because the number is
- * meaningless without it. Every row is {@code LKR} today, but a money value
- * that has to be interpreted by convention rather than by its own content is a
- * value waiting to be misread the day that stops being true.
- * <p>
- * A <i>snapshot</i>, not a live handle: both {@code priceCents} and
- * {@code availableQty} can be stale the instant after they are read. Callers
- * that need a guarantee must re-check inside their own transaction.
+ * A snapshot, not a live handle: both {@code priceCents} and
+ * {@code availableQty} can be stale the instant after they are read.
  *
  * @param productId   the product's identifier
  * @param name        the product's display name

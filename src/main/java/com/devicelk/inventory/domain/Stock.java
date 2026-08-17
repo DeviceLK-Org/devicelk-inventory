@@ -13,14 +13,12 @@ import jakarta.validation.constraints.Min;
  * {@code inventory.stock}.
  * <p>
  * Split out of {@code Product} because the two have opposite access profiles: a
- * product record is written rarely, whereas its quantities change on every sale
- * and restock. Keeping them apart means a stock movement never contends with a
- * catalogue edit, and the {@link Version optimistic lock} below guards only the
- * rows that actually need it.
+ * product is written rarely, its quantities change on every sale and restock.
+ * Keeping them apart means a stock movement never contends with a catalogue
+ * edit, and the {@link Version optimistic lock} guards only the rows that need it.
  * <p>
- * The primary key is the owning product's id — assigned, never generated — so a
- * product and its stock share one identity and the row can be reached without a
- * secondary index.
+ * The primary key is the owning product's id, assigned rather than generated, so
+ * the row is reachable without a secondary index.
  */
 @Entity
 @Table(name = "stock", schema = "inventory")
@@ -50,9 +48,9 @@ public class Stock {
     private int minStockThreshold;
 
     /**
-     * Optimistic lock. Two concurrent adjustments to the same product would
-     * otherwise interleave their read-modify-write and silently lose one of the
-     * movements; with this column the losing transaction fails instead.
+     * Optimistic lock. Without it, two concurrent adjustments would interleave
+     * their read-modify-write and silently lose one movement; with it, the losing
+     * transaction fails instead.
      */
     @Version
     @Column(nullable = false)
@@ -73,9 +71,8 @@ public class Stock {
     /**
      * Applies a signed movement to the available quantity.
      * <p>
-     * Lives on the entity rather than in the service so the "never negative"
-     * invariant travels with the data it constrains — the database CHECK is the
-     * backstop, not the first line of defence.
+     * On the entity rather than in the service so the "never negative" invariant
+     * travels with the data; the database CHECK is the backstop.
      *
      * @param quantityChange signed delta; positive restocks, negative consumes
      * @throws IllegalArgumentException when the movement would drive the
@@ -92,20 +89,14 @@ public class Stock {
     /**
      * Holds units back for an in-flight order: available → reserved.
      * <p>
-     * <b>A move, not a decrement.</b> The units leave {@link #availableQty} so
-     * nothing else can sell them, and arrive in {@link #reservedQty} so the
-     * business still knows they are on the shelf and who has a claim on them.
-     * Total units on hand — the sum of the two — is unchanged, because nothing
-     * physically left the warehouse; that only happens at
-     * {@link #confirmReserved(int)}. Decrementing availability without the
-     * matching increment would balance the sale but lose the fact that the stock
-     * exists, leaving {@link #release(int)} nothing to give back and a stock
-     * count that silently disagrees with the shelf.
+     * A move, not a decrement. Total units on hand (the sum of both counts) is
+     * unchanged, because nothing has physically left the warehouse — that happens
+     * at {@link #confirmReserved(int)}. Decrementing availability alone would
+     * leave {@link #release(int)} nothing to give back.
      *
      * @param quantity units to hold; must be positive
-     * @throws IllegalArgumentException   if {@code quantity} is not positive —
-     *                                    a non-positive reservation would run
-     *                                    this transfer backwards and invent stock
+     * @throws IllegalArgumentException   if {@code quantity} is not positive,
+     *                                    which would run the transfer backwards
      * @throws InsufficientStockException if fewer than {@code quantity} units are
      *                                    available to hold
      */
@@ -126,14 +117,11 @@ public class Stock {
      * Returns held units to the shelf: reserved → available.
      * <p>
      * The compensating action for {@link #reserve(int)} — a cancelled order, a
-     * refused payment, or a saga unwinding a checkout that failed after its
-     * reservation committed.
+     * refused payment, or a checkout that failed after its reservation committed.
      * <p>
-     * Releasing more than is held is rejected rather than clamped. Clamping to
-     * zero would let a double-compensation quietly manufacture available stock
-     * out of a bookkeeping error, and the resulting oversell would surface far
-     * from its cause. This is a caller bug, so it fails loudly at the point the
-     * ledger stops adding up.
+     * Releasing more than is held is rejected rather than clamped: clamping would
+     * let a double-compensation manufacture stock, and the resulting oversell
+     * would surface far from its cause.
      *
      * @param quantity units to return; must be positive
      * @throws IllegalArgumentException if {@code quantity} is not positive
@@ -159,9 +147,8 @@ public class Stock {
      * Consumes held units: the sale completed and the goods left the warehouse.
      * <p>
      * Only {@link #reservedQty} falls. {@link #availableQty} was already reduced
-     * by {@link #reserve(int)} and must not be touched again — doing so would
-     * charge the same units to the shelf twice, which is the classic way a
-     * confirm step turns a correct reservation into phantom oversell.
+     * by {@link #reserve(int)}; touching it again would charge the same units
+     * twice and cause phantom oversell.
      *
      * @param quantity units to consume; must be positive
      * @throws IllegalArgumentException if {@code quantity} is not positive

@@ -5,18 +5,13 @@ package com.devicelk.inventory;
  * states — the unit of work for every method in {@link InventoryFacade}'s
  * reservation lifecycle.
  * <p>
- * One record serves reserve, release and confirm because all three describe the
- * same thing: this many units of this product. What differs is the direction,
- * and that belongs in the method name rather than in a flag on the payload — a
- * {@code direction} field here would make it possible to construct a "release"
- * line and hand it to {@code reserveStock}.
+ * One record serves reserve, release and confirm: all three say "this many units
+ * of this product", and the direction belongs in the method name rather than a
+ * flag here, which would let a "release" line be handed to {@code reserveStock}.
  * <p>
- * <b>Quantity is validated at construction</b>, so an invalid line cannot exist
- * to be passed anywhere. This matters more than it looks: a non-positive
- * quantity reaching {@code reserveStock} would <i>increase</i> available stock
- * while claiming to hold units back, quietly manufacturing inventory. Rejecting
- * it here means no caller can create that state even by accident, rather than
- * every method having to remember to re-check.
+ * Quantity is validated at construction so an invalid line cannot exist. A
+ * non-positive quantity reaching {@code reserveStock} would <i>increase</i>
+ * available stock while claiming to hold units back.
  *
  * @param productId the product to move units of; never {@code null}
  * @param quantity  units to move; must be greater than zero

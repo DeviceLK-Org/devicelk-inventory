@@ -29,16 +29,10 @@ import java.util.function.Function;
 import java.util.stream.Collectors;
 
 /**
- * Default implementation of {@link ProductService}.
+ * Default {@link ProductService}. Package-private; callers bind to the interface.
  * <p>
- * Holds the CRUD business logic and is responsible for mapping the
- * {@link Product} JPA entity to the {@link ProductResponseDTO} exposed by
- * the API. Constructor injection is used so the dependency is final and the
- * class stays easy to test.
- * <p>
- * Package-private on purpose: only the {@link ProductService} interface is
- * visible outside this package, keeping the implementation an internal detail
- * of the inventory module.
+ * Holds the CRUD logic and maps {@link Product} entities onto the
+ * {@link ProductResponseDTO} the API exposes.
  */
 @Service
 class ProductServiceImpl implements ProductService {
@@ -57,7 +51,7 @@ class ProductServiceImpl implements ProductService {
     @Override
     @Transactional
     public ProductResponseDTO createProduct(ProductWriteRequest request) {
-        // CRITICAL CHECK: Enforce uniqueness before saving to the database
+        // Enforce name/brand uniqueness before saving.
         if (productRepository.existsByNameAndBrand(request.name(), request.brand())) {
             throw new IllegalArgumentException(
                     "A product with the name '" + request.name() + "' under brand '" + request.brand() + "' already exists in the inventory."
@@ -104,9 +98,8 @@ class ProductServiceImpl implements ProductService {
         Stock stock = stockRepository.findById(id)
                 .orElseThrow(() -> new StockNotFoundException(id));
 
-        // Only run the uniqueness check when the name/brand pair actually
-        // changes — otherwise existsByNameAndBrand would match this very
-        // product and reject a legitimate update.
+        // Only check uniqueness when the name/brand pair changes, or
+        // existsByNameAndBrand would match this very product and reject the update.
         boolean identityChanged =
                 !existing.getName().equals(request.name())
                         || !existing.getBrand().equals(request.brand());
@@ -126,9 +119,8 @@ class ProductServiceImpl implements ProductService {
         existing.setPriceCents(Money.toCents(request.price()));
         existing.setDescription(request.description());
 
-        // A PUT sets the quantity outright rather than applying a delta — the
-        // same semantics this endpoint had when stock lived on the product.
-        // Relative movements go through adjustStock, which enforces the floor.
+        // A PUT sets the quantity outright; relative movements go through
+        // adjustStock, which enforces the never-negative floor.
         stock.setAvailableQty(request.stockQuantity());
         stock.setMinStockThreshold(request.minStockThreshold());
 
@@ -154,14 +146,13 @@ class ProductServiceImpl implements ProductService {
         Stock stock = stockRepository.findById(id)
                 .orElseThrow(() -> new StockNotFoundException(id));
 
-        // The invariant lives on the entity; a movement that would go negative
-        // throws IllegalArgumentException, which maps to HTTP 409 as before.
+        // The invariant lives on the entity; going negative throws
+        // IllegalArgumentException, which maps to HTTP 409.
         stock.adjustAvailableQty(quantityChange);
         Stock updated = stockRepository.save(stock);
 
-        // Low-stock alert: non-blocking warning when stock hits or falls below
-        // the configured re-order threshold. Placeholder for a future Kafka
-        // notification topic — the transaction is intentionally NOT aborted.
+        // Warning only — the transaction is deliberately not aborted. Placeholder
+        // for a future notification topic.
         if (updated.isLowStock()) {
             log.warn("[LOW STOCK ALERT] Product ID: {}, Name: {} is running low! "
                             + "Current Stock: {}, Threshold: {}",
@@ -194,9 +185,8 @@ class ProductServiceImpl implements ProductService {
                     product.getName(),
                     product.getPriceCents(),
                     product.getCurrency(),
-                    // No stock row means nothing is known to be sellable. Zero is
-                    // the safe reading: it blocks a sale rather than waving one
-                    // through on the strength of a missing record.
+                    // No stock row means nothing is known to be sellable; zero
+                    // blocks a sale rather than waving one through.
                     stock == null ? 0 : stock.getAvailableQty());
         });
     }
@@ -209,8 +199,8 @@ class ProductServiceImpl implements ProductService {
                                                    BigDecimal minPrice,
                                                    BigDecimal maxPrice,
                                                    Pageable pageable) {
-        // Build the query dynamically: start from an always-true predicate and
-        // AND in a restriction only when its parameter was actually supplied.
+        // Start from an always-true predicate and AND in each restriction only
+        // when its parameter was supplied.
         Specification<Product> spec = (root, query, cb) -> cb.conjunction();
 
         if (name != null && !name.isBlank()) {
@@ -226,8 +216,8 @@ class ProductServiceImpl implements ProductService {
         }
 
         if (category != null && !category.isBlank()) {
-            // Resolve the enum up front; an invalid value surfaces as an
-            // IllegalArgumentException, which the GlobalExceptionHandler maps.
+            // Resolve up front; an invalid value throws IllegalArgumentException,
+            // which GlobalExceptionHandler maps.
             Category categoryEnum = Category.valueOf(category.trim().toUpperCase());
             spec = spec.and((root, query, cb) ->
                     cb.equal(root.get("category"), categoryEnum));
@@ -256,13 +246,12 @@ class ProductServiceImpl implements ProductService {
     @Transactional(readOnly = true)
     public List<ProductSnapshot> getProductSnapshots(List<Long> ids) {
         if (ids.isEmpty()) {
-            // Short-circuit: an empty IN () is both pointless and, on some
-            // dialects, invalid SQL.
+            // An empty IN () is pointless and, on some dialects, invalid SQL.
             return List.of();
         }
         List<Product> products = productRepository.findByIdIn(ids);
-        // One stock query for the whole batch — the same trick mapToDTOs uses,
-        // and the reason this stays two queries regardless of batch size.
+        // One stock query for the whole batch, so this stays two queries
+        // regardless of batch size.
         Map<Long, Stock> stockByProductId = stockByProductId(products);
         return products.stream()
                 .map(product -> {
@@ -293,14 +282,11 @@ class ProductServiceImpl implements ProductService {
     }
 
     /**
-     * Rewrites a {@code sort=price} directive onto the {@code priceCents}
-     * property.
+     * Rewrites a {@code sort=price} directive onto {@code priceCents}.
      * <p>
-     * {@code price} is no longer a field of {@link Product}, so Spring Data
-     * would reject the sort outright — and clients (the storefront's
-     * "Price: Low to High") have been sending it all along. Cents are a
-     * strictly increasing function of price, so the resulting order is
-     * identical to the one those clients already receive.
+     * {@code price} is not a field of {@link Product}, so Spring Data would
+     * reject the sort — but clients still send it. Cents increase strictly with
+     * price, so the resulting order is identical.
      */
     private static Pageable remapPriceSort(Pageable pageable) {
         if (pageable.getSort().isUnsorted()) {
@@ -336,14 +322,14 @@ class ProductServiceImpl implements ProductService {
     }
 
     /**
-     * Maps a persisted entity and its stock row to the immutable response DTO.
+     * Maps an entity and its stock row to the response DTO.
      * <p>
-     * {@code price} is rebuilt from cents through {@link Money}, then wrapped in
-     * a {@code BigDecimal} so Jackson still writes it as an unquoted JSON number
-     * with two decimals — the exact bytes clients received when the column was
+     * {@code price} is rebuilt from cents through {@link Money} and wrapped in a
+     * {@code BigDecimal} so Jackson writes an unquoted JSON number with two
+     * decimals, matching what clients received when the column was
      * {@code numeric(12,2)}.
      *
-     * @param stock the product's stock row, or {@code null} if it has none — a
+     * @param stock the product's stock row, or {@code null} if it has none — the
      *              read degrades to zeroes and a warning rather than failing the
      *              whole response over one inconsistent row
      */

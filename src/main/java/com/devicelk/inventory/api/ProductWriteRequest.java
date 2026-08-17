@@ -15,16 +15,10 @@ import java.math.BigDecimal;
 /**
  * Request body accepted by {@code POST /inventory} and {@code PUT /inventory/{id}}.
  * <p>
- * Exists so the {@link Product} entity is no longer bound directly to the HTTP
- * layer. Binding an entity means its internal storage decisions leak into the
- * public contract — the move to integer cents would otherwise have renamed the
- * accepted {@code price} field, and splitting stock out would have removed two
- * more. This DTO holds the wire shape steady while the persistence model
- * changes underneath it.
- * <p>
- * The fields, their names and their validation messages are deliberately
- * identical to those the entity carried before the split, so existing clients
- * see the same request format and the same 400 response body.
+ * Keeps the {@link Product} entity out of the HTTP layer, so storage decisions do
+ * not leak into the public contract — the move to integer cents and the split of
+ * stock into its own table would both otherwise have changed the accepted fields.
+ * This DTO holds the wire shape steady while persistence changes underneath.
  *
  * @param price             major units (e.g. {@code 42999.99}); converted to the
  *                          entity's minor-unit {@code priceCents} by the service
@@ -44,9 +38,8 @@ public record ProductWriteRequest(
 
         @NotNull(message = "Price is required")
         @Positive(message = "Price must be greater than zero")
-        // Guards the exact conversion in Money.toCents: a third decimal has no
-        // representation in cents, and previously would have been rounded away
-        // silently by the numeric(12,2) column.
+        // Guards Money.toCents, which refuses to round: a third decimal has no
+        // representation in cents.
         @Digits(integer = 10, fraction = 2,
                 message = "Price must have at most 2 decimal places")
         BigDecimal price,

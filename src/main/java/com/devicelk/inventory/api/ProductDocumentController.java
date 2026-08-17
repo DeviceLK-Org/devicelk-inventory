@@ -19,12 +19,11 @@ import java.util.List;
  * Spec-document endpoints, rooted at {@code /inventory} alongside
  * {@link ProductController}.
  * <p>
- * A thin adapter, in keeping with the rest of this layer: it turns the multipart
- * upload into plain bytes and delegates. No business logic lives here.
+ * A thin adapter: turn the multipart upload into plain bytes and delegate. No
+ * business logic here.
  * <p>
- * Protected at the API gateway rather than here, exactly like the other
- * {@code /inventory/**} writes — see {@code SecurityConfig} for why this
- * service's own port is left open.
+ * Protected at the API gateway rather than here, like the other
+ * {@code /inventory/**} writes — see {@code SecurityConfig}.
  */
 @RestController
 @RequestMapping("/inventory")
@@ -60,13 +59,12 @@ public class ProductDocumentController {
     /**
      * Removes a spec document from storage.
      * <p>
-     * The key travels as a <b>query parameter</b> rather than a path variable:
-     * keys contain {@code /} (e.g. {@code product-7/Specs.md}), which a path
-     * variable cannot carry without the double-encoding Spring rejects by
-     * default.
+     * The key is a query parameter, not a path variable: keys contain {@code /}
+     * (e.g. {@code product-7/Specs.md}), which a path variable cannot carry
+     * without double-encoding that Spring rejects by default.
      * <p>
-     * 204 means the object is gone from storage. It does <em>not</em> mean the
-     * AI has stopped answering from it — that happens on the next sync.
+     * 204 means the object is gone from storage, not that the AI has stopped
+     * answering from it — that happens on the next sync.
      */
     @DeleteMapping("/documents")
     public ResponseEntity<Void> delete(@RequestParam("key") String key) {
@@ -88,9 +86,8 @@ public class ProductDocumentController {
     /**
      * Starts a knowledge-base sync for the whole data source.
      * <p>
-     * 202 Accepted, not 200: the job has been queued, not finished. A job
-     * already in flight comes back as 409 via
-     * {@code SyncInProgressException} — expected, not an error.
+     * 202, not 200: the job is queued, not finished. A job already in flight
+     * comes back as 409 — expected, not an error.
      */
     @PostMapping("/documents/sync")
     public ResponseEntity<IngestionJobResponse> startSync() {

@@ -4,15 +4,13 @@ import java.math.BigDecimal;
 import java.math.RoundingMode;
 
 /**
- * Formatting helper for the integer-cents money representation used across the
+ * Conversions for the integer-cents money representation used across the
  * inventory module.
  * <p>
- * Prices are stored and moved around as a {@code long} count of minor units
- * (cents) so no arithmetic ever touches a binary floating-point type. The only
- * place that count turns back into a human/wire-facing decimal string is
- * {@link #toDisplayString(long)} — every transport adapter (REST DTO, gRPC
- * response) must call it rather than re-deriving the conversion, so the two
- * contracts can never drift apart.
+ * Prices are stored as a {@code long} count of minor units so no arithmetic
+ * touches a floating-point type. Every transport adapter must convert through
+ * these two methods rather than re-deriving it, so the REST and gRPC contracts
+ * cannot drift apart.
  */
 public final class Money {
 
@@ -42,11 +40,9 @@ public final class Money {
     /**
      * Converts an inbound decimal amount to minor units, exactly.
      * <p>
-     * The inverse of {@link #toDisplayString(long)}, and the only place a
-     * caller-supplied decimal becomes cents. Rounding is deliberately refused
-     * rather than applied: an amount carrying a fraction of a cent is a caller
-     * error, and silently rounding it would let money change value on the way
-     * into the system.
+     * The inverse of {@link #toDisplayString(long)}. Rounding is refused rather
+     * than applied: a fraction of a cent is a caller error, and rounding it would
+     * let money change value on the way into the system.
      * <pre>
      *   toCents(new BigDecimal("329997.00")) -> 32999700
      *   toCents(new BigDecimal("42999.99"))  -> 4299999

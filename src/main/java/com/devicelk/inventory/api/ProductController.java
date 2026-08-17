@@ -23,11 +23,10 @@ import java.math.BigDecimal;
 import java.util.List;
 
 /**
- * <b>Controller</b> layer: exposes the inventory REST API.
+ * REST API for the inventory, rooted at {@code /inventory}.
  * <p>
- * All endpoints are rooted at {@code /inventory}. The controller is a thin
- * adapter — it validates input, delegates to {@link ProductService}, and
- * shapes the HTTP response. No business logic lives here.
+ * A thin adapter: validate input, delegate to {@link ProductService}, shape the
+ * HTTP response. No business logic here.
  */
 @RestController
 @RequestMapping("/inventory")
@@ -84,13 +83,10 @@ public class ProductController {
     }
 
     /**
-     * Advanced search: paginated, filtered listing of the inventory.
-     * <p>
-     * Every filter is optional and combined with AND semantics — omitting a
-     * parameter simply drops that restriction. Paging is resolved by Spring's
-     * {@link Pageable} argument resolver: clients pass {@code page}, {@code size}
+     * Paginated, filtered listing. Every filter is optional and ANDed — omitting
+     * a parameter drops that restriction. Clients pass {@code page}, {@code size}
      * and {@code sort} (e.g. {@code ?sort=price,desc}); {@link PageableDefault}
-     * supplies the fallback of page 0, size 10, sorted by {@code id} ascending.
+     * falls back to page 0, size 10, sorted by {@code id} ascending.
      *
      * @param name     partial, case-insensitive name match ({@code like %name%})
      * @param brand    case-insensitive exact brand match

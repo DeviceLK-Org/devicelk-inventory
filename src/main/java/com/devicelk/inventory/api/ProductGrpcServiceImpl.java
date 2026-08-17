@@ -62,12 +62,10 @@ class ProductGrpcServiceImpl extends ProductGrpcServiceGrpc.ProductGrpcServiceIm
     private final StockRepository stockRepository;
 
     /**
-     * The reservation lifecycle, reached through the module's own service rather
-     * than by touching {@link StockRepository} directly here. This class is a
-     * transport adapter; the invariants — all-or-nothing across lines, totals
-     * summed per product, rows touched in a fixed order to avoid deadlocks — live
-     * in the service, where they are shared with any other inbound adapter and
-     * cannot be forgotten by one of them.
+     * The reservation lifecycle. Reached through the service rather than
+     * {@link StockRepository} directly, so the invariants — all-or-nothing across
+     * lines, totals summed per product, rows locked in a fixed order — stay in one
+     * place and are shared by every inbound adapter.
      */
     private final StockReservationService stockReservationService;
 
@@ -185,16 +183,11 @@ class ProductGrpcServiceImpl extends ProductGrpcServiceGrpc.ProductGrpcServiceIm
 
     // --- Reservation lifecycle ---------------------------------------------------
     //
-    // The write half of this service, and the seam that used to be a method call.
-    // DeviceLK-Commerce's checkout reached StockReservationService directly when it
-    // lived in this process; these three RPCs are the same three operations with a
-    // network between them, which is deliberately ALL that changed on this side.
-    //
-    // Each call is its own transaction — StockReservationServiceImpl's methods are
-    // @Transactional and there is no ambient transaction to join here. That is the
-    // whole difference in guarantee: a reservation that returns success has
-    // COMMITTED, and the caller's later failure cannot roll it back. Compensation
-    // is the caller's job now, via ReleaseStock.
+    // The write half of this service. Each RPC is its own transaction, since
+    // StockReservationServiceImpl's methods are @Transactional and there is no
+    // ambient transaction to join. So a reservation that returns success has
+    // COMMITTED and the caller's later failure cannot roll it back — compensating
+    // is the caller's job, via ReleaseStock.
 
     @Override
     public void reserveStock(ReservationRequest request,
@@ -215,31 +208,24 @@ class ProductGrpcServiceImpl extends ProductGrpcServiceGrpc.ProductGrpcServiceIm
     }
 
     /**
-     * Shared body of the three reservation RPCs: they differ only in which way
-     * units move, which is already expressed by the method reference passed in.
+     * Shared body of the three reservation RPCs; they differ only in which way
+     * units move, expressed by the method reference passed in.
      * <p>
-     * <b>The failure mapping is the substance of this method</b>, because each
-     * kind of failure tells the caller to do something different:
+     * The failure mapping is the substance here, because each outcome tells the
+     * caller to do something different:
      * <ul>
-     *   <li><b>Insufficient stock → a successful RPC with {@code success=false}.</b>
-     *       The request was well-formed and the server worked correctly; the answer
-     *       is simply no. It carries structured data the caller acts on, so it is a
-     *       payload rather than a status. See the proto for the full reasoning.</li>
-     *   <li><b>A malformed line → {@code INVALID_ARGUMENT}.</b> Raised by
-     *       {@link ReservationLine}'s constructor before anything is attempted, so a
-     *       non-positive quantity cannot reach the service and quietly
-     *       <i>increase</i> available stock while claiming to hold units back.</li>
-     *   <li><b>Releasing or confirming more units than are held →
-     *       {@code FAILED_PRECONDITION}.</b> A caller bug, not a shortage: units
-     *       cannot have been held against a row that does not exist, and reporting
-     *       it as a shortage would send the caller looking for a restock that
-     *       cannot help.</li>
-     *   <li><b>An optimistic-lock collision → {@code ABORTED}.</b> Two checkouts
-     *       raced for the same stock row and this one lost. ABORTED is the status
-     *       gRPC defines as retryable-at-a-higher-level, which is exactly right:
-     *       nothing is wrong with the request and repeating it may well succeed.
-     *       Reporting it as INTERNAL — as a naive catch-all would — tells the caller
-     *       the server is broken and to stop trying.</li>
+     *   <li>Insufficient stock → a successful RPC with {@code success=false}. The
+     *       request was fine and the answer is simply no, with structured detail
+     *       the caller acts on.</li>
+     *   <li>Malformed line → {@code INVALID_ARGUMENT}, raised by
+     *       {@link ReservationLine}'s constructor before anything is attempted, so
+     *       a negative quantity cannot reach the service and <i>increase</i> stock.</li>
+     *   <li>Releasing or confirming more than is held → {@code FAILED_PRECONDITION}.
+     *       A caller bug, not a shortage; reporting a shortage would send them
+     *       looking for a restock that cannot help.</li>
+     *   <li>Optimistic-lock collision → {@code ABORTED}, which gRPC defines as
+     *       retryable. INTERNAL would tell the caller the server is broken and to
+     *       stop trying, when repeating the request may well succeed.</li>
      * </ul>
      */
     private void applyMovement(ReservationRequest request,
@@ -297,10 +283,8 @@ class ProductGrpcServiceImpl extends ProductGrpcServiceGrpc.ProductGrpcServiceIm
     /**
      * Converts the wire lines into the domain's value type.
      * <p>
-     * {@link ReservationLine}'s constructor is what validates quantity, so this
-     * method deliberately adds no checks of its own — a second copy of that rule
-     * here would be one to drift out of step with the one that actually protects
-     * the stock table.
+     * Adds no checks of its own: {@link ReservationLine}'s constructor validates
+     * quantity, and a second copy of that rule here would drift out of step.
      *
      * @throws IllegalArgumentException if any line has a non-positive quantity
      */
@@ -332,9 +316,9 @@ class ProductGrpcServiceImpl extends ProductGrpcServiceGrpc.ProductGrpcServiceIm
      * Parses an optional price bound into minor units; empty means "no bound"
      * (returns {@code null}).
      * <p>
-     * Converting here rather than at the query keeps every failure mode inside
-     * the caller's INVALID_ARGUMENT handler, so a malformed bound can never
-     * escape as INTERNAL.
+     * Converting here rather than at the query keeps every failure inside the
+     * caller's INVALID_ARGUMENT handler, so a malformed bound never escapes as
+     * INTERNAL.
      *
      * @throws IllegalArgumentException when the value is not a valid decimal
      *         number, or carries a fraction of a cent
@@ -390,10 +374,9 @@ class ProductGrpcServiceImpl extends ProductGrpcServiceGrpc.ProductGrpcServiceIm
                 .setName(product.getName())
                 // Protobuf setters reject null — the description column is nullable
                 .setDescription(product.getDescription() == null ? "" : product.getDescription())
-                // The same price as a machine-readable pair. DeviceLK-Commerce reads
-                // these two rather than parsing the display string above, so the
-                // integer it writes into a cart line — and then into order history —
-                // is byte-for-byte the one stored here.
+                // The same price, machine-readable. DeviceLK-Commerce reads these two
+                // rather than parsing the display string, so the integer it stores in
+                // a cart line is byte-for-byte the one held here.
                 .setPriceCents(product.getPriceCents())
                 .setCurrency(product.getCurrency())
                 .build();

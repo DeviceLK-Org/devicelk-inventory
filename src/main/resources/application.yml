@@ -12,9 +12,13 @@ server:
 # writing to the bucket alone does NOT make it answerable.
 app:
   documents:
-    bucket: ${DOCUMENTS_BUCKET:devicelk-product-documents}
-    knowledge-base-id: ${BEDROCK_KNOWLEDGE_BASE_ID:Q5RYFZBEX0}
-    data-source-id: ${BEDROCK_DATA_SOURCE_ID:OXIANAR0TN}
+    # Empty defaults, not absent defaults: these name AWS resources that no
+    # sensible fallback value can stand in for, so a developer without a .env
+    # should still get a service that starts and fails at the point of an actual
+    # document call, rather than one that cannot boot at all.
+    bucket: ${DOCUMENTS_BUCKET:}
+    knowledge-base-id: ${BEDROCK_KNOWLEDGE_BASE_ID:}
+    data-source-id: ${BEDROCK_DATA_SOURCE_ID:}
     region: ${BEDROCK_REGION:us-east-1}
 
 grpc:
@@ -23,6 +27,19 @@ grpc:
     reflection-service-enabled: true
 
 spring:
+  config:
+    # Loads this service's own .env as a property source. The path is relative to
+    # the process working directory, so it resolves for `mvn spring-boot:run` and
+    # for `java -jar target/*.jar` as long as both are started from this service
+    # directory (which is what the VS Code task's `cwd` guarantees).
+    #
+    # 'optional:' is what lets a service with no .env start normally instead of
+    # failing on a missing import. The file is parsed as .properties, NOT as a
+    # shell script: `export FOO=bar` would yield a key literally named
+    # "export FOO", quotes are kept as part of the value, and a bare line with no
+    # '=' becomes a key bound to the empty string, which silently BEATS any
+    # ${VAR:default} in this file. Keep it to plain KEY=value lines.
+    import: optional:file:./.env[.properties]
   application:
     # Registered in Eureka as PRODUCT-SERVICE — matches the API Gateway route (lb://PRODUCT-SERVICE)
     name: devicelk-inventory-service
@@ -46,9 +63,22 @@ spring:
     # else. Cart and order data live in devicelk_commerce, a separate database on
     # the same dev container, reachable only by DeviceLK-Commerce — there is no
     # connection from here to there, and no query that could span them.
+    #
+    # These read POSTGRES_USER / POSTGRES_PASSWORD rather than DB_USERNAME /
+    # DB_PASSWORD on purpose. The .env beside this project is consumed by TWO
+    # readers — this application, and docker-compose.yml, which creates the very
+    # container these credentials authenticate against. Compose dictates the
+    # names (POSTGRES_USER/POSTGRES_PASSWORD are what the postgres image takes),
+    # so reading the same keys here keeps one credential in one place. Defining a
+    # second DB_USERNAME alias alongside it would work right up until someone
+    # changes the password on one line and not the other.
+    #
+    # NOTE: DeviceLK-Commerce still reads ${DB_USERNAME}/${DB_PASSWORD}. Its
+    # defaults make it start regardless, but the two services do not share a
+    # variable-naming convention — worth aligning deliberately, not by accident.
     url: ${DB_URL:jdbc:postgresql://localhost:5433/devicelk_inventory}
-    username: ${DB_USERNAME:devicelk_admin}
-    password: ${DB_PASSWORD:devicelk_pass}
+    username: ${POSTGRES_USER:devicelk_admin}
+    password: ${POSTGRES_PASSWORD:devicelk_pass}
     driver-class-name: org.postgresql.Driver
 
   flyway:

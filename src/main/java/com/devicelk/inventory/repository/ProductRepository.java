@@ -15,28 +15,20 @@ import java.util.List;
 import java.util.Optional;
 
 /**
- * <b>Repository</b> layer for {@link Product}.
+ * Repository for {@link Product}.
  * <p>
- * Extending {@link JpaRepository} provides ready-made CRUD operations
- * ({@code save}, {@code findById}, {@code findAll}, {@code deleteById}, ...)
- * without any boilerplate implementation. Spring Data generates the proxy
- * at runtime.
- * <p>
- * Extending {@link JpaSpecificationExecutor} additionally enables dynamic,
- * criteria-based queries — required by the advanced search/filtering feature
- * which builds a {@code Specification<Product>} at runtime and runs it through
- * {@code findAll(spec, pageable)}.
+ * {@link JpaSpecificationExecutor} is what enables the dynamic, criteria-based
+ * search: {@link #searchSpecification} builds a {@code Specification<Product>} at
+ * runtime for {@code findAll(spec, pageable)}.
  */
 @Repository
 public interface ProductRepository
         extends JpaRepository<Product, Long>, JpaSpecificationExecutor<Product> {
-    // Checks if a product with the exact same name and brand already exists
     boolean existsByNameAndBrand(String name, String brand);
 
     /**
-     * Bulk fetch: returns every product whose id appears in the given list.
-     * Backs the AI RAG service so it can resolve many products in one query
-     * instead of issuing a {@code findById} per id.
+     * Bulk fetch, so the AI RAG service resolves many products in one query
+     * rather than a {@code findById} per id.
      *
      * @param ids the product identifiers to look up
      * @return the matching products (empty list if none match)
@@ -65,12 +57,10 @@ public interface ProductRepository
 
     /**
      * Dynamic filter backing the {@code SearchProducts} gRPC RPC. Each criterion
-     * is ANDed in only when supplied, so every price/stock constraint is resolved
-     * as SQL — never left to the AI layer. Run it through
-     * {@code findAll(spec, pageable)} from {@link JpaSpecificationExecutor}.
+     * is ANDed in only when supplied, so price and stock constraints resolve as
+     * SQL rather than being left to the AI layer.
      * <p>
-     * Price bounds are in minor units to match {@code Product.priceCents}; the
-     * caller converts once, via {@code Money.toCents}.
+     * Price bounds are in minor units to match {@code Product.priceCents}.
      *
      * @param category       exact category to match, or {@code null} for any
      * @param minPriceCents  inclusive lower price bound in cents, or {@code null} for none
@@ -95,16 +85,11 @@ public interface ProductRepository
                     cb.lessThanOrEqualTo(root.get("priceCents"), maxPriceCents));
         }
         if (inStockOnly) {
-            // Correlated EXISTS against inventory.stock rather than a join.
-            //
-            // Product deliberately has no JPA association to Stock: the inverse
-            // side of a shared-PK @OneToOne cannot be lazy without bytecode
-            // enhancement, so mapping one would make Hibernate fetch stock on
-            // every product read — reintroducing the N+1 this filter avoids.
-            //
-            // EXISTS resolves in the same single statement a join would, but it
-            // cannot duplicate a product row, so the page's total count stays
-            // correct when Spring Data derives the count query from this spec.
+            // Correlated EXISTS rather than a join, for two reasons. Product has no
+            // JPA association to Stock — the inverse side of a shared-PK @OneToOne
+            // cannot be lazy without bytecode enhancement, so mapping one would
+            // fetch stock on every product read. And EXISTS cannot duplicate a
+            // product row, so the page's derived count query stays correct.
             spec = spec.and((root, query, cb) -> {
                 Subquery<Long> availableStock = query.subquery(Long.class);
                 Root<Stock> stock = availableStock.from(Stock.class);

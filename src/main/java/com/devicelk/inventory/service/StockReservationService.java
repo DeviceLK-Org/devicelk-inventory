@@ -9,18 +9,14 @@ import java.util.List;
  * The reservation lifecycle for stock: hold units, give them back, or consume
  * them.
  * <p>
- * Separate from {@link ProductService} rather than three more methods on it, for
- * the same reason {@code Stock} is a separate entity from {@code Product}: these
- * operations have an entirely different access profile. Catalogue CRUD is
- * occasional, administrative, and touches product rows; this runs on every
- * checkout, is contended, and touches only quantities under an optimistic lock.
- * Keeping them apart means the contention story lives in one small class instead
- * of being diffused through a service that is mostly about something else.
+ * Separate from {@link ProductService} for the same reason {@code Stock} is a
+ * separate entity from {@code Product}: catalogue CRUD is occasional and
+ * administrative, while this runs on every checkout, is contended, and touches
+ * only quantities under an optimistic lock.
  * <p>
- * <b>Every method is all-or-nothing across the whole list.</b> A partially
- * applied reservation is worse than a rejected one — it holds units for an order
- * that will not exist, and nothing is left holding the information needed to
- * release them.
+ * Every method is all-or-nothing across the whole list. A partially applied
+ * reservation holds units for an order that will not exist, with nothing left
+ * holding the information needed to release them.
  */
 public interface StockReservationService {
 
@@ -30,9 +26,9 @@ public interface StockReservationService {
      * Moves {@code availableQty → reservedQty} for every line, in one
      * transaction. If any single line cannot be satisfied, nothing is applied.
      * <p>
-     * Intended to be called <i>inside</i> the caller's transaction, so the
-     * reservation commits with whatever it is reserving for. See the
-     * implementation note on why this must not open a transaction of its own.
+     * Called over gRPC with no ambient transaction, so it commits on its own —
+     * a remote caller compensates with {@link #release(List)} rather than
+     * relying on a rollback.
      *
      * @param lines the units to hold; duplicate product ids are summed, and an
      *              empty list is a no-op
@@ -46,13 +42,9 @@ public interface StockReservationService {
      * Returns previously held units to the shelf: {@code reservedQty →
      * availableQty}.
      * <p>
-     * The compensating action for {@link #reserve(List)}. Nothing in the current
-     * checkout path calls it, because a failure there rolls the reservation back
-     * with the transaction and there is nothing to compensate. It exists for the
-     * cases that cannot rely on that rollback: an order cancelled after it
-     * committed, a payment refused later, and — once order becomes its own
-     * service — a saga unwinding a checkout whose reservation already landed in
-     * another database.
+     * The compensating action for {@link #reserve(List)}: a checkout that failed
+     * after its reservation committed, an order cancelled later, or a payment
+     * refused.
      *
      * @param lines the units to return
      * @throws IllegalStateException if any line exceeds what is currently
@@ -64,11 +56,9 @@ public interface StockReservationService {
      * Consumes held units once the sale completes: {@code reservedQty} falls and
      * {@code availableQty} is left alone.
      * <p>
-     * The completing action for {@link #reserve(List)}, and the point at which
-     * the units are accounted as having left the warehouse rather than merely
-     * being spoken for. Unused today — orders are created {@code PENDING} and
-     * nothing yet moves them to {@code PAID} — and belongs to whatever handles
-     * payment.
+     * The completing action for {@link #reserve(List)}: the units are now
+     * accounted as having left the warehouse. Unused today — orders are created
+     * {@code PENDING} and nothing moves them to {@code PAID} yet.
      *
      * @param lines the units to consume
      * @throws IllegalStateException if any line exceeds what is currently

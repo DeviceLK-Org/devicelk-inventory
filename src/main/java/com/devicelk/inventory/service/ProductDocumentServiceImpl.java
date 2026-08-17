@@ -43,10 +43,9 @@ import java.util.stream.Collectors;
 /**
  * Default {@link ProductDocumentService}.
  * <p>
- * Package-private, matching this module's convention that only the interface is
- * visible outside the package. Constructed through
- * {@link ProductDocumentServiceFactory} where a caller in another package needs
- * one (notably tests).
+ * Package-private; only the interface is visible outside this package. Callers
+ * elsewhere (notably tests) construct one via
+ * {@link ProductDocumentServiceFactory}.
  */
 @Service
 class ProductDocumentServiceImpl implements ProductDocumentService {
@@ -95,9 +94,8 @@ class ProductDocumentServiceImpl implements ProductDocumentService {
                     .contentType(MARKDOWN_CONTENT_TYPE)
                     .build(), RequestBody.fromBytes(content));
 
-            // Only after the write succeeds, and only when the name actually
-            // changed. Deleting a key equal to the one just written would erase
-            // the document this call was meant to store.
+            // Only after the write succeeds, and only when the key changed:
+            // deleting the key just written would erase this very document.
             if (previousKey != null && !previousKey.equals(key)) {
                 s3.deleteObject(DeleteObjectRequest.builder()
                         .bucket(properties.bucket())
@@ -114,10 +112,9 @@ class ProductDocumentServiceImpl implements ProductDocumentService {
         log.info("Stored spec document {} for product {}. It stays invisible to the "
                 + "knowledge base until an ingestion job runs.", key, productId);
 
-        // Reuse the existing product mapper rather than rebuilding the DTO: it
-        // owns the cents-to-BigDecimal money conversion and the stock lookup,
-        // and duplicating either here would fork the one conversion this
-        // codebase is most careful to keep in a single place.
+        // Reuse the product mapper rather than rebuilding the DTO: it owns the
+        // cents-to-BigDecimal conversion and the stock lookup, and duplicating
+        // either here would fork them.
         return productService.getProductById(productId);
     }
 
@@ -154,8 +151,8 @@ class ProductDocumentServiceImpl implements ProductDocumentService {
         Map<String, S3Object> inBucket = listBucketObjects();
         Set<String> inKnowledgeBase = listIndexedKeys();
 
-        // TreeSet so the page has a stable, alphabetical order without the
-        // caller needing to sort.
+        // TreeSet gives the page a stable alphabetical order without the caller
+        // having to sort.
         Set<String> allKeys = new TreeSet<>(inBucket.keySet());
         allKeys.addAll(inKnowledgeBase);
 
@@ -184,9 +181,8 @@ class ProductDocumentServiceImpl implements ProductDocumentService {
     /**
      * Every object in the bucket, keyed by object key.
      * <p>
-     * Pages explicitly rather than assuming a single response: the bucket holds
-     * ten objects today, but a listing that silently truncates would report
-     * documents as missing rather than failing, which is the worse outcome.
+     * Pages explicitly rather than assuming one response: a truncated listing
+     * would report documents as missing rather than failing outright.
      */
     private Map<String, S3Object> listBucketObjects() {
         Map<String, S3Object> objects = new LinkedHashMap<>();
@@ -210,9 +206,9 @@ class ProductDocumentServiceImpl implements ProductDocumentService {
     /**
      * Keys the knowledge base currently has indexed.
      * <p>
-     * Bedrock reports absolute {@code s3://bucket/key} URIs, so they are reduced
-     * to bare keys. Entries from any other bucket are filtered out rather than
-     * assumed to be ours — a knowledge base can have more than one source.
+     * Bedrock reports absolute {@code s3://bucket/key} URIs, reduced here to bare
+     * keys. Entries from other buckets are filtered out, since a knowledge base
+     * can have more than one source.
      */
     private Set<String> listIndexedKeys() {
         String prefix = "s3://" + properties.bucket() + "/";
@@ -249,8 +245,8 @@ class ProductDocumentServiceImpl implements ProductDocumentService {
             log.info("Started knowledge base ingestion job {}", job.ingestionJobId());
             return toResponse(job);
         } catch (ConflictException e) {
-            // Not a fault: Bedrock allows one job per data source at a time, and
-            // the running job will pick up whatever is waiting anyway.
+            // Not a fault: Bedrock allows one job per data source, and the running
+            // job picks up whatever is waiting.
             throw new SyncInProgressException("A knowledge base sync is already running.");
         } catch (SdkException e) {
             throw new DocumentStorageException("Could not start the knowledge base sync.", e);
@@ -277,9 +273,9 @@ class ProductDocumentServiceImpl implements ProductDocumentService {
     /**
      * Reduces a client-supplied filename to a bare, safe leaf name.
      * <p>
-     * Path separators are <em>stripped</em> rather than merely rejected, so an
-     * upload cannot escape its {@code product-{id}/} prefix no matter what the
-     * client sends. A remaining {@code ..} is then refused outright.
+     * Path separators are stripped rather than rejected, so an upload cannot
+     * escape its {@code product-{id}/} prefix whatever the client sends. A
+     * remaining {@code ..} is then refused outright.
      */
     private String sanitize(String originalFilename) {
         if (originalFilename == null || originalFilename.isBlank()) {
